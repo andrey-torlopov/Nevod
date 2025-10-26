@@ -21,9 +21,10 @@
 
 ```swift
 import Nevod
-import Core
-import Storage  // Если используете аутентификацию
 ```
+
+Если вы используете встроенный `TokenStorage`, добавьте в проект пакет `Storage` и импортируйте модуль `Storage`. Структурное логирование через Letopis остаётся опциональным (`import Letopis`).
+
 
 ### 2. Определите домен вашего сервиса
 
@@ -45,17 +46,20 @@ enum MyDomain: ServiceDomain {
 
 ```swift
 let config = NetworkConfig(
-    urls: [
-        MyDomain.api: (
-            test: URL(string: "https://test-api.example.com")!,
-            prod: URL(string: "https://api.example.com")!
+    environments: [
+        MyDomain.api: SimpleEnvironment(
+            baseURL: URL(string: "https://api.example.com")!,
+            apiKey: "secret-key",
+            headers: ["X-Client-Version": "1.0"]
         )
     ],
-    environment: .production,
     timeout: 30,
     retries: 3
 )
 ```
+
+`SimpleEnvironment` входит в поставку Nevod и реализует `NetworkEnvironmentProviding`. При необходимости создайте собственную реализацию (например, для разных сред).
+
 
 ### 4. Создайте Network Provider
 
@@ -399,23 +403,20 @@ enum AppDomains: ServiceDomain {
 
 ```swift
 let config = NetworkConfig(
-    urls: [
-        AppDomains.mainAPI: (
-            test: URL(string: "https://test-api.example.com")!,
-            prod: URL(string: "https://api.example.com")!
+    environments: [
+        AppDomains.mainAPI: SimpleEnvironment(
+            baseURL: URL(string: "https://api.example.com")!
         ),
-        AppDomains.analyticsAPI: (
-            test: URL(string: "https://test-analytics.example.com")!,
-            prod: URL(string: "https://analytics.example.com")!
+        AppDomains.analyticsAPI: SimpleEnvironment(
+            baseURL: URL(string: "https://analytics.example.com")!
         ),
-        AppDomains.cdn: (
-            test: URL(string: "https://test-cdn.example.com")!,
-            prod: URL(string: "https://cdn.example.com")!
+        AppDomains.cdn: SimpleEnvironment(
+            baseURL: URL(string: "https://cdn.example.com")!
         )
-    ],
-    environment: .production
+    ]
 )
 ```
+
 
 ### Использование различных доменов
 
@@ -539,14 +540,13 @@ let result = await provider.request(uploadRoute, delegate: delegate)
 4. **Используйте Simple Routes**: Предпочитайте `SimpleGetRoute` и т.д. для стандартных запросов
 5. **Кастомные Routes для сложных случаев**: Создавайте кастомные Route только когда необходимо
 6. **Порядок Interceptor'ов важен**: Размещайте логирование первым, аутентификацию последней в цепочке
-7. **Переключение окружений**: Используйте `.test` во время разработки, `.production` для релиза
+7. **Переключение окружений**: Создавайте отдельные `NetworkConfig` для разных окружений и внедряйте нужную конфигурацию (staging, QA, production)
 8. **Безопасность токенов**: Используйте безопасное хранилище (Keychain) для production токенов
 
 ## Следующие шаги
 
-- Изучите [Руководство по установке](./Installation-ru.md) для зависимостей
-- Проверьте [API Reference](./API.md) для полной документации
-- Просмотрите примеры исходного кода в репозитории
+- Изучите [Руководство по установке](./Installation-ru.md) для подробностей настройки
+- Изучите примеры в репозитории
 
 ## Общие паттерны
 

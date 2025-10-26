@@ -21,9 +21,10 @@ Get started with Nevod in minutes. This guide covers the most common use cases.
 
 ```swift
 import Nevod
-import Core
-import Storage  // If using authentication
 ```
+
+If you rely on the built-in `TokenStorage`, add your `Storage` implementation and `import Storage`. Structured logging via Letopis stays optional (`import Letopis`).
+
 
 ### 2. Define Your Service Domain
 
@@ -45,17 +46,20 @@ enum MyDomain: ServiceDomain {
 
 ```swift
 let config = NetworkConfig(
-    urls: [
-        MyDomain.api: (
-            test: URL(string: "https://test-api.example.com")!,
-            prod: URL(string: "https://api.example.com")!
+    environments: [
+        MyDomain.api: SimpleEnvironment(
+            baseURL: URL(string: "https://api.example.com")!,
+            apiKey: "secret-key",
+            headers: ["X-Client-Version": "1.0"]
         )
     ],
-    environment: .production,
     timeout: 30,
     retries: 3
 )
 ```
+
+`SimpleEnvironment` ships with Nevod and conforms to `NetworkEnvironmentProviding`. Provide your own implementation if you need dynamic configuration (e.g. staging vs production).
+
 
 ### 4. Create Network Provider
 
@@ -399,23 +403,20 @@ enum AppDomains: ServiceDomain {
 
 ```swift
 let config = NetworkConfig(
-    urls: [
-        AppDomains.mainAPI: (
-            test: URL(string: "https://test-api.example.com")!,
-            prod: URL(string: "https://api.example.com")!
+    environments: [
+        AppDomains.mainAPI: SimpleEnvironment(
+            baseURL: URL(string: "https://api.example.com")!
         ),
-        AppDomains.analyticsAPI: (
-            test: URL(string: "https://test-analytics.example.com")!,
-            prod: URL(string: "https://analytics.example.com")!
+        AppDomains.analyticsAPI: SimpleEnvironment(
+            baseURL: URL(string: "https://analytics.example.com")!
         ),
-        AppDomains.cdn: (
-            test: URL(string: "https://test-cdn.example.com")!,
-            prod: URL(string: "https://cdn.example.com")!
+        AppDomains.cdn: SimpleEnvironment(
+            baseURL: URL(string: "https://cdn.example.com")!
         )
-    ],
-    environment: .production
+    ]
 )
 ```
+
 
 ### Use Different Domains
 
@@ -539,13 +540,12 @@ let result = await provider.request(uploadRoute, delegate: delegate)
 4. **Use Simple Routes**: Prefer `SimpleGetRoute`, etc. for standard requests
 5. **Custom Routes for Complex Cases**: Only create custom Route when needed
 6. **Interceptor Order Matters**: Put logging first, auth last in chain
-7. **Environment Switching**: Use `.test` during development, `.production` for release
+7. **Environment Switching**: Create separate `NetworkConfig` instances per environment and inject the appropriate one for staging, QA, or production builds
 8. **Token Security**: Use secure storage (Keychain) for production tokens
 
 ## Next Steps
 
-- Explore [Installation Guide](./Installation.md) for dependencies
-- Check [API Reference](./API.md) for complete documentation
+- Explore [Installation Guide](./Installation.md) for setup details
 - Review source code examples in the repository
 
 ## Common Patterns

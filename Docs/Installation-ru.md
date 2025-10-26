@@ -8,7 +8,7 @@
 
 - **iOS**: 17.0 или новее
 - **macOS**: 15.0 или новее
-- **Swift**: 6.1 или новее
+- **Swift**: 6.2 или новее
 - **Xcode**: 16.0 или новее
 
 ## Способы установки
@@ -31,7 +31,7 @@
 Добавьте Nevod в ваш файл `Package.swift`:
 
 ```swift
-// swift-tools-version: 6.1
+// swift-tools-version: 6.2
 import PackageDescription
 
 let package = Package(
@@ -63,25 +63,30 @@ swift package update
 
 Nevod требует следующие зависимости, которые будут автоматически установлены через SPM:
 
-### 1. Модуль Core
-**Назначение**: Предоставляет базовые утилиты и конфигурацию окружения
+### Letopis (структурированное логирование)
+**Назначение**: фреймворк структурированного логирования для внутренних событий
 
-**Репозиторий**: Локальный модуль (часть того же workspace)
+**Репозиторий**: [https://github.com/andrey-torlopov/Letopis](https://github.com/andrey-torlopov/Letopis)
+
+**Версия**: 0.0.9 или новее
 
 **Возможности**:
-- Enum `Environment` (test/production)
-- Определения базовых протоколов
-- Общие утилиты
+- Система логирования на основе событий
+- Поддержка нескольких interceptor'ов
+- Структурированные метаданные
+- Вывод в консоль, файл и кастомные каналы
 
-### 2. Модуль Storage
-**Назначение**: Абстракция хранилища ключ-значение для сохранения токенов
+Используйте `import Letopis`, когда передаёте собственный логгер в `NetworkProvider`.
 
-**Репозиторий**: Локальный модуль (часть того же workspace)
+### Storage (опциональное хранение токена)
+**Назначение**: абстракция key-value хранилища, которую использует `TokenStorage`
+
+**Репозиторий**: Добавьте сопутствующий пакет Storage из своего workspace или реализуйте собственное хранилище.
 
 **Возможности**:
 - Протокол `KeyValueStorage`
 - Реализация `UserDefaultsStorage`
-- Потокобезопасные операции с хранилищем
+- Потокобезопасные операции
 
 **Использование в Nevod**:
 ```swift
@@ -91,34 +96,8 @@ let storage = UserDefaultsStorage()
 let tokenStorage = TokenStorage(storage: storage)
 ```
 
-### 3. Letopis
-**Назначение**: Фреймворк структурированного логирования для внутренних событий
+**Примечание**: Подключайте `Storage` только если планируете использовать встроенный `TokenStorage`. Вы можете заменить его любым актором с аналогичным API.
 
-**Репозиторий**: [https://github.com/andrey-torlopov/Letopis](https://github.com/andrey-torlopov/Letopis)
-
-**Версия**: 0.0.9 или новее
-
-**Возможности**:
-- Система логирования на основе событий
-- Поддержка множественных interceptor'ов
-- Структурированные метаданные payload
-- Вывод в консоль, файл и кастомные места
-
-**Использование в Nevod**:
-```swift
-import Letopis
-
-let logger = Letopis(interceptors: [
-    ConsoleInterceptor()
-])
-
-let provider = NetworkProvider(
-    config: config,
-    logger: logger  // Опционально
-)
-```
-
-**Примечание**: Letopis опционален. Вы можете передать `nil` в качестве параметра logger, если вам не нужно внутреннее логирование.
 
 ## Граф зависимостей
 
@@ -127,34 +106,24 @@ let provider = NetworkProvider(
 │     Nevod       │
 └────────┬────────┘
          │
-         ├─────────────────────────────────┐
-         │                                 │
-         v                                 v
-┌─────────────────┐              ┌─────────────────┐
-│      Core       │              │    Storage      │
-│                 │              │                 │
-│ - Environment   │              │ - KeyValueStorage│
-│ - Utilities     │              │ - UserDefaults  │
-└─────────────────┘              └─────────────────┘
-         │
          v
 ┌─────────────────┐
 │    Letopis      │
-│                 │
-│ - Logging       │
-│ - Interceptors  │
 └─────────────────┘
 ```
+
+Storage — опциональный помощник, подключайте его только если используете встроенный `TokenStorage`.
+
 
 ## Импорт модулей
 
 В ваших Swift файлах:
 
 ```swift
-import Nevod           // Основная функциональность сети
-import Storage         // Если используете TokenStorage
-import Letopis         // Если используете логирование
-import Core            // Если используете Environment
+import Nevod           // Основная работа с сетью
+// Опционально
+import Storage         // Для использования TokenStorage
+import Letopis         // Для передачи кастомного логгера
 ```
 
 ## Минимальная настройка
@@ -163,7 +132,6 @@ import Core            // Если используете Environment
 
 ```swift
 import Nevod
-import Core
 import Storage
 
 // 1. Определяем домен сервиса
@@ -179,13 +147,13 @@ enum MyDomain: ServiceDomain {
 
 // 2. Создаем конфигурацию сети
 let config = NetworkConfig(
-    urls: [
-        MyDomain.api: (
-            test: URL(string: "https://test-api.example.com")!,
-            prod: URL(string: "https://api.example.com")!
+    environments: [
+        MyDomain.api: SimpleEnvironment(
+            baseURL: URL(string: "https://api.example.com")!,
+            apiKey: "secret-key",
+            headers: ["X-Client-Version": "1.0"]
         )
     ],
-    environment: .production,
     timeout: 30,
     retries: 3
 )
@@ -203,6 +171,9 @@ let route = SimpleGetRoute<User, MyDomain>(
 let user = try await provider.perform(route)
 ```
 
+`SimpleEnvironment` входит в состав Nevod и реализует `NetworkEnvironmentProviding`. При необходимости замените его собственной реализацией для переключения окружений.
+
+
 ## Опционально: Настройка локального пакета
 
 Если вы разрабатываете Nevod локально или используете его как локальный пакет:
@@ -210,11 +181,9 @@ let user = try await provider.perform(route)
 ### Структура файлов
 ```
 YourProject/
-├── LocalSPM/
-│   └── Core/
-│       ├── Core/         # Модуль Core
-│       ├── Storage/      # Модуль Storage
-│       └── Nevod/        # Модуль Nevod
+├── LocalPackages/
+│   ├── Nevod/
+│   └── Storage/      # Опциональный помощник
 └── YourApp/
     └── Package.swift
 ```
@@ -225,13 +194,15 @@ YourProject/
 let package = Package(
     name: "YourApp",
     dependencies: [
-        .package(path: "../LocalSPM/Core/Nevod")
+        .package(path: "../LocalPackages/Nevod"),
+        // .package(path: "../LocalPackages/Storage") // Опциональный помощник
     ],
     targets: [
         .target(
             name: "YourApp",
             dependencies: [
-                .product(name: "Nevod", package: "Nevod")
+                .product(name: "Nevod", package: "Nevod"),
+                // .product(name: "Storage", package: "Storage") // Опционально
             ]
         )
     ]
@@ -250,7 +221,7 @@ let package = Package(
 ### Проблема: Не удалось разрешить зависимости
 
 **Решение**:
-1. Проверьте совместимость версии Swift (требуется 6.1+)
+1. Проверьте совместимость версии Swift (требуется 6.2+)
 2. Проверьте требования платформы (iOS 17+, macOS 15+)
 3. Проверьте синтаксис Package.swift
 4. Очистите derived data: `~/Library/Developer/Xcode/DerivedData`
@@ -268,14 +239,13 @@ swift build
 ## Следующие шаги
 
 - [Руководство по быстрому старту](./QuickStart-ru.md) - Изучите базовое использование
-- [API Reference](./API.md) - Исследуйте все возможности
 - [Примеры](../Examples/) - Посмотрите реальные примеры
 
 ## Совместимость версий
 
 | Версия Nevod | iOS    | macOS  | Swift | Xcode  |
 |--------------|--------|--------|-------|--------|
-| 1.0.0+       | 17.0+  | 15.0+  | 6.1+  | 16.0+  |
+| 1.0.0+       | 17.0+  | 15.0+  | 6.2+  | 16.0+  |
 
 ## Получение помощи
 
