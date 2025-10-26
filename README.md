@@ -36,7 +36,8 @@ Built on modern Swift concurrency (async/await) and actor-based architecture for
 - **Simple API** - Minimal boilerplate for basic requests
 - **Interceptor Pattern** - Flexible middleware system for request adaptation and retry logic
 - **Multiple Services** - Easy management of different API endpoints
-- **OAuth Support** - Built-in automatic token refresh handling
+- **Generic Token System** - Flexible authentication with any token type
+- **OAuth Support** - Built-in automatic token refresh handling with custom strategies
 - **Type-Safe** - Protocol-oriented design with full type safety
 - **Modern Swift** - async/await and actor-based concurrency
 - **Testable** - Dependency injection friendly architecture
@@ -88,10 +89,16 @@ Define your API endpoints with type-safe routes:
 
 ### Interceptors
 Modify requests and handle retries:
-- `AuthenticationInterceptor` - OAuth token management
+- `AuthenticationInterceptor<Token>` - Generic token management with custom refresh strategies
 - `LoggingInterceptor` - HTTP request/response logging
 - `HeadersInterceptor` - Add custom headers
 - `InterceptorChain` - Combine multiple interceptors
+
+### Token System
+Flexible authentication with any token type:
+- `TokenModel` protocol - Define your own token types
+- `TokenStorage<Token>` - Generic token storage
+- Built-in `Token` - Simple Bearer token implementation
 
 ### Network Provider
 Actor-based network executor with automatic retries and error handling.
@@ -104,14 +111,90 @@ let route = SimpleGetRoute<User, MyDomain>(endpoint: "/users/me", domain: .api)
 let user = try await provider.perform(route)
 ```
 
-### With Authentication
+### With Simple Bearer Token
 ```swift
+// Create token storage
+let storage = TokenStorage<Token>(storage: myKeyValueStorage)
+
+// Create authentication interceptor
+let authInterceptor = AuthenticationInterceptor(
+    tokenStorage: storage,
+    refreshStrategy: { oldToken in
+        // Your refresh logic here
+        let newTokenValue = try await authService.refreshToken(oldToken?.value)
+        return Token(value: newTokenValue)
+    }
+)
+
+let provider = NetworkProvider(config: config, interceptor: authInterceptor)
+```
+
+### With Custom Token Type (OAuth)
+```swift
+// Define your custom token
+struct OAuthToken: TokenModel, Codable {
+    let accessToken: String
+    let refreshToken: String
+    let expiresAt: Date
+    
+    func authorize(_ request: inout URLRequest) {
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+    }
+    
+    func encode() throws -> Data {
+        try JSONEncoder().encode(self)
+    }
+    
+    static func decode(from data: Data) throws -> Self {
+        try JSONDecoder().decode(Self.self, from: data)
+    }
+}
+
+// Use with storage and interceptor
+let storage = TokenStorage<OAuthToken>(storage: myStorage)
+let authInterceptor = AuthenticationInterceptor(
+    tokenStorage: storage,
+    refreshStrategy: { oldToken in
+        guard let oldToken = oldToken else { throw NetworkError.unauthorized }
+        
+        // Call refresh endpoint
+        let response: OAuthResponse = try await baseClient.request(
+            .post,
+            path: "/oauth/refresh",
+            body: ["refresh_token": oldToken.refreshToken]
+        )
+        
+        return OAuthToken(
+            accessToken: response.accessToken,
+            refreshToken: response.refreshToken,
+            expiresAt: Date().addingTimeInterval(response.expiresIn)
+        )
+    }
+)
+```
+
+### Multiple Domains with Different Authentication
+```swift
+// OAuth for api.example.com
+let oauthStorage = TokenStorage<OAuthToken>(storage: keychainStorage)
+let oauthInterceptor = AuthenticationInterceptor(
+    tokenStorage: oauthStorage,
+    refreshStrategy: { /* OAuth refresh */ },
+    shouldAuthenticate: { $0.url?.host == "api.example.com" }
+)
+
+// API Key for admin.example.com
+let apiKeyStorage = TokenStorage<APIKeyToken>(storage: userDefaults)
+let apiKeyInterceptor = AuthenticationInterceptor(
+    tokenStorage: apiKeyStorage,
+    refreshStrategy: { /* API key refresh */ },
+    shouldAuthenticate: { $0.url?.host == "admin.example.com" }
+)
+
+// Combine both
 let provider = NetworkProvider(
     config: config,
-    interceptor: AuthenticationInterceptor(
-        tokenStorage: tokenStorage,
-        refreshToken: { try await authService.refreshToken() }
-    )
+    interceptor: InterceptorChain([oauthInterceptor, apiKeyInterceptor])
 )
 ```
 
@@ -122,10 +205,19 @@ let provider = NetworkProvider(
     interceptor: InterceptorChain([
         LoggingInterceptor(logger: logger, logLevel: .verbose),
         HeadersInterceptor(headers: ["User-Agent": "MyApp/1.0"]),
-        AuthenticationInterceptor(tokenStorage: tokenStorage, refreshToken: refreshBlock)
+        AuthenticationInterceptor(tokenStorage: storage, refreshStrategy: refreshBlock)
     ])
 )
 ```
+
+## Architecture Benefits
+
+✅ **Separation of Concerns** - Token models, storage, and refresh logic are separated  
+✅ **Flexibility** - Support any token type through protocols  
+✅ **Scalability** - Multiple interceptors for different domains  
+✅ **Type-Safety** - Strong typing through generics  
+✅ **Testability** - Easy to mock storage and refresh strategies  
+✅ **Clean Architecture** - External code configures behavior  
 
 ## Requirements
 

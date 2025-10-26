@@ -23,8 +23,7 @@ Get started with Nevod in minutes. This guide covers the most common use cases.
 import Nevod
 ```
 
-If you rely on the built-in `TokenStorage`, add your `Storage` implementation and `import Storage`. Structured logging via Letopis stays optional (`import Letopis`).
-
+Nevod includes built-in token storage support. Structured logging via Letopis stays optional (`import Letopis`).
 
 ### 2. Define Your Service Domain
 
@@ -59,7 +58,6 @@ let config = NetworkConfig(
 ```
 
 `SimpleEnvironment` ships with Nevod and conforms to `NetworkEnvironmentProviding`. Provide your own implementation if you need dynamic configuration (e.g. staging vs production).
-
 
 ### 4. Create Network Provider
 
@@ -222,29 +220,69 @@ struct UploadRoute: Route {
 
 ## Authentication
 
-### Setup Token Storage
+Nevod provides a flexible, generic token system that works with any token type.
+
+### Simple Bearer Token Authentication
+
+#### 1. Implement KeyValueStorage
 
 ```swift
-import Storage
-
-let storage = UserDefaultsStorage()
-let tokenStorage = TokenStorage(storage: storage)
+final class UserDefaultsStorage: KeyValueStorage {
+    private let defaults: UserDefaults
+    
+    init(userDefaults: UserDefaults = .standard) {
+        self.defaults = userDefaults
+    }
+    
+    nonisolated func string(for key: StorageKey) -> String? {
+        defaults.string(forKey: key.rawValue)
+    }
+    
+    nonisolated func data(for key: StorageKey) -> Data? {
+        defaults.data(forKey: key.rawValue)
+    }
+    
+    nonisolated func set(_ value: String?, for key: StorageKey) {
+        defaults.set(value, forKey: key.rawValue)
+    }
+    
+    nonisolated func set(_ value: Data?, for key: StorageKey) {
+        defaults.set(value, forKey: key.rawValue)
+    }
+    
+    nonisolated func remove(for key: StorageKey) {
+        defaults.removeObject(forKey: key.rawValue)
+    }
+}
 ```
 
-### Create Auth Interceptor
+**Note**: For production apps, use Keychain instead of UserDefaults for secure token storage.
+
+#### 2. Setup Token Storage
+
+```swift
+let storage = UserDefaultsStorage()
+let tokenStorage = TokenStorage<Token>(storage: storage)
+```
+
+#### 3. Create Auth Interceptor
 
 ```swift
 let authInterceptor = AuthenticationInterceptor(
     tokenStorage: tokenStorage,
-    refreshToken: {
+    refreshStrategy: { oldToken in
         // Your token refresh logic
-        let newToken = try await refreshAccessToken()
-        return newToken
+        guard let oldToken = oldToken else {
+            throw NetworkError.unauthorized
+        }
+        
+        let newTokenValue = try await refreshAccessToken(oldToken.value)
+        return Token(value: newTokenValue)
     }
 )
 ```
 
-### Create Provider with Auth
+#### 4. Create Provider with Auth
 
 ```swift
 let provider = NetworkProvider(
@@ -254,6 +292,102 @@ let provider = NetworkProvider(
 
 // All requests will now include Authorization header
 // and automatically retry on 401 with token refresh
+```
+
+### Custom Token Types (OAuth)
+
+For more complex authentication schemes like OAuth, create a custom token type:
+
+```swift
+struct OAuthToken: TokenModel, Codable {
+    let accessToken: String
+    let refreshToken: String
+    let expiresAt: Date
+    
+    // TokenModel conformance
+    func authorize(_ request: inout URLRequest) {
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+    }
+    
+    func encode() throws -> Data {
+        try JSONEncoder().encode(self)
+    }
+    
+    static func decode(from data: Data) throws -> Self {
+        try JSONDecoder().decode(Self.self, from: data)
+    }
+}
+
+// Use with storage
+let oauthStorage = TokenStorage<OAuthToken>(storage: keychainStorage)
+
+let authInterceptor = AuthenticationInterceptor(
+    tokenStorage: oauthStorage,
+    refreshStrategy: { oldToken in
+        guard let oldToken = oldToken else {
+            throw NetworkError.unauthorized
+        }
+        
+        // Call refresh endpoint
+        let response: OAuthResponse = try await baseClient.request(
+            .post,
+            path: "/oauth/refresh",
+            body: ["refresh_token": oldToken.refreshToken]
+        )
+        
+        return OAuthToken(
+            accessToken: response.accessToken,
+            refreshToken: response.refreshToken,
+            expiresAt: Date().addingTimeInterval(response.expiresIn)
+        )
+    }
+)
+```
+
+### Multiple Domains with Different Authentication
+
+```swift
+// OAuth for api.example.com
+let oauthStorage = TokenStorage<OAuthToken>(storage: keychainStorage)
+let oauthInterceptor = AuthenticationInterceptor(
+    tokenStorage: oauthStorage,
+    refreshStrategy: { /* OAuth refresh */ },
+    shouldAuthenticate: { request in
+        request.url?.host == "api.example.com"
+    }
+)
+
+// API Key for admin.example.com
+struct APIKeyToken: TokenModel, Codable {
+    let key: String
+    
+    func authorize(_ request: inout URLRequest) {
+        request.setValue(key, forHTTPHeaderField: "X-API-Key")
+    }
+    
+    func encode() throws -> Data {
+        try JSONEncoder().encode(self)
+    }
+    
+    static func decode(from data: Data) throws -> Self {
+        try JSONDecoder().decode(Self.self, from: data)
+    }
+}
+
+let apiKeyStorage = TokenStorage<APIKeyToken>(storage: userDefaults)
+let apiKeyInterceptor = AuthenticationInterceptor(
+    tokenStorage: apiKeyStorage,
+    refreshStrategy: { /* API key refresh */ },
+    shouldAuthenticate: { request in
+        request.url?.host == "admin.example.com"
+    }
+)
+
+// Combine both interceptors
+let provider = NetworkProvider(
+    config: config,
+    interceptor: InterceptorChain([oauthInterceptor, apiKeyInterceptor])
+)
 ```
 
 ### Complete Auth Example
@@ -274,7 +408,7 @@ let loginRoute = SimplePostRoute<LoginResponse, MyDomain>(
 let loginResponse = try await provider.perform(loginRoute)
 
 // 2. Store token
-await tokenStorage.setToken(Token(value: loginResponse.accessToken))
+await tokenStorage.save(Token(value: loginResponse.accessToken))
 
 // 3. All subsequent requests are authenticated automatically
 let userRoute = SimpleGetRoute<User, MyDomain>(endpoint: "/users/me", domain: .api)
@@ -417,7 +551,6 @@ let config = NetworkConfig(
 )
 ```
 
-
 ### Use Different Domains
 
 ```swift
@@ -456,7 +589,7 @@ let provider = NetworkProvider(
         ]),
         AuthenticationInterceptor(
             tokenStorage: tokenStorage,
-            refreshToken: { try await refreshToken() }
+            refreshStrategy: { try await refreshToken($0) }
         )
     ])
 )
@@ -540,8 +673,10 @@ let result = await provider.request(uploadRoute, delegate: delegate)
 4. **Use Simple Routes**: Prefer `SimpleGetRoute`, etc. for standard requests
 5. **Custom Routes for Complex Cases**: Only create custom Route when needed
 6. **Interceptor Order Matters**: Put logging first, auth last in chain
-7. **Environment Switching**: Create separate `NetworkConfig` instances per environment and inject the appropriate one for staging, QA, or production builds
+7. **Environment Switching**: Create separate `NetworkConfig` instances per environment
 8. **Token Security**: Use secure storage (Keychain) for production tokens
+9. **Generic Tokens**: Define custom token types for complex auth schemes
+10. **Refresh Strategy**: Keep refresh logic external to token models
 
 ## Next Steps
 

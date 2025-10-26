@@ -68,7 +68,7 @@ Nevod требует следующие зависимости, которые �
 
 **Репозиторий**: [https://github.com/andrey-torlopov/Letopis](https://github.com/andrey-torlopov/Letopis)
 
-**Версия**: 0.0.9 или новее
+**Версия**: 0.0.10 или новее
 
 **Возможности**:
 - Система логирования на основе событий
@@ -77,27 +77,6 @@ Nevod требует следующие зависимости, которые �
 - Вывод в консоль, файл и кастомные каналы
 
 Используйте `import Letopis`, когда передаёте собственный логгер в `NetworkProvider`.
-
-### Storage (опциональное хранение токена)
-**Назначение**: абстракция key-value хранилища, которую использует `TokenStorage`
-
-**Репозиторий**: Добавьте сопутствующий пакет Storage из своего workspace или реализуйте собственное хранилище.
-
-**Возможности**:
-- Протокол `KeyValueStorage`
-- Реализация `UserDefaultsStorage`
-- Потокобезопасные операции
-
-**Использование в Nevod**:
-```swift
-import Storage
-
-let storage = UserDefaultsStorage()
-let tokenStorage = TokenStorage(storage: storage)
-```
-
-**Примечание**: Подключайте `Storage` только если планируете использовать встроенный `TokenStorage`. Вы можете заменить его любым актором с аналогичным API.
-
 
 ## Граф зависимостей
 
@@ -112,9 +91,6 @@ let tokenStorage = TokenStorage(storage: storage)
 └─────────────────┘
 ```
 
-Storage — опциональный помощник, подключайте его только если используете встроенный `TokenStorage`.
-
-
 ## Импорт модулей
 
 В ваших Swift файлах:
@@ -122,7 +98,6 @@ Storage — опциональный помощник, подключайте е
 ```swift
 import Nevod           // Основная работа с сетью
 // Опционально
-import Storage         // Для использования TokenStorage
 import Letopis         // Для передачи кастомного логгера
 ```
 
@@ -132,7 +107,6 @@ import Letopis         // Для передачи кастомного логг�
 
 ```swift
 import Nevod
-import Storage
 
 // 1. Определяем домен сервиса
 enum MyDomain: ServiceDomain {
@@ -173,6 +147,60 @@ let user = try await provider.perform(route)
 
 `SimpleEnvironment` входит в состав Nevod и реализует `NetworkEnvironmentProviding`. При необходимости замените его собственной реализацией для переключения окружений.
 
+## Настройка хранилища токенов (Опционально)
+
+Nevod включает встроенную поддержку хранения токенов. Для использования реализуйте протокол `KeyValueStorage`:
+
+```swift
+import Nevod
+
+// Пример: хранилище на основе UserDefaults
+final class UserDefaultsStorage: KeyValueStorage {
+    private let defaults: UserDefaults
+    
+    init(userDefaults: UserDefaults = .standard) {
+        self.defaults = userDefaults
+    }
+    
+    nonisolated func string(for key: StorageKey) -> String? {
+        defaults.string(forKey: key.rawValue)
+    }
+    
+    nonisolated func data(for key: StorageKey) -> Data? {
+        defaults.data(forKey: key.rawValue)
+    }
+    
+    nonisolated func set(_ value: String?, for key: StorageKey) {
+        defaults.set(value, forKey: key.rawValue)
+    }
+    
+    nonisolated func set(_ value: Data?, for key: StorageKey) {
+        defaults.set(value, forKey: key.rawValue)
+    }
+    
+    nonisolated func remove(for key: StorageKey) {
+        defaults.removeObject(forKey: key.rawValue)
+    }
+}
+
+// Использование с TokenStorage
+let storage = UserDefaultsStorage()
+let tokenStorage = TokenStorage<Token>(storage: storage)
+
+// Настройка interceptor'а аутентификации
+let authInterceptor = AuthenticationInterceptor(
+    tokenStorage: tokenStorage,
+    refreshStrategy: { oldToken in
+        // Ваша логика обновления токена
+        let newValue = try await refreshTokenAPI(oldToken?.value)
+        return Token(value: newValue)
+    }
+)
+
+let provider = NetworkProvider(config: config, interceptor: authInterceptor)
+```
+
+Для production приложений рекомендуется использовать Keychain для безопасного хранения токенов вместо UserDefaults.
 
 ## Опционально: Настройка локального пакета
 
@@ -182,8 +210,7 @@ let user = try await provider.perform(route)
 ```
 YourProject/
 ├── LocalPackages/
-│   ├── Nevod/
-│   └── Storage/      # Опциональный помощник
+│   └── Nevod/
 └── YourApp/
     └── Package.swift
 ```
@@ -194,15 +221,13 @@ YourProject/
 let package = Package(
     name: "YourApp",
     dependencies: [
-        .package(path: "../LocalPackages/Nevod"),
-        // .package(path: "../LocalPackages/Storage") // Опциональный помощник
+        .package(path: "../LocalPackages/Nevod")
     ],
     targets: [
         .target(
             name: "YourApp",
             dependencies: [
-                .product(name: "Nevod", package: "Nevod"),
-                // .product(name: "Storage", package: "Storage") // Опционально
+                .product(name: "Nevod", package: "Nevod")
             ]
         )
     ]

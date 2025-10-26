@@ -68,7 +68,7 @@ Nevod requires the following dependencies, which will be automatically installed
 
 **Repository**: [https://github.com/andrey-torlopov/Letopis](https://github.com/andrey-torlopov/Letopis)
 
-**Version**: 0.0.9 or later
+**Version**: 0.0.10 or later
 
 **Features**:
 - Event-based logging system
@@ -77,27 +77,6 @@ Nevod requires the following dependencies, which will be automatically installed
 - Console, file, and custom output
 
 You only need to `import Letopis` when you pass a custom logger into `NetworkProvider`.
-
-### Storage (optional token persistence)
-**Purpose**: Key-value storage abstraction used by `TokenStorage`
-
-**Repository**: Add the companion Storage package from your workspace or provide your own implementation.
-
-**Features**:
-- `KeyValueStorage` protocol
-- `UserDefaultsStorage` implementation
-- Thread-safe storage operations
-
-**Usage in Nevod**:
-```swift
-import Storage
-
-let storage = UserDefaultsStorage()
-let tokenStorage = TokenStorage(storage: storage)
-```
-
-**Note**: Include `Storage` only if you plan to use the bundled `TokenStorage`. You can substitute any actor that matches the same API.
-
 
 ## Dependency Graph
 
@@ -112,29 +91,24 @@ let tokenStorage = TokenStorage(storage: storage)
 └─────────────────┘
 ```
 
-Storage is an optional helper that you include only when you use the bundled `TokenStorage`.
-
-
 ## Importing Modules
 
 In your Swift files:
 
 ```swift
 import Nevod           // Core networking
-// Optional helpers
-import Storage         // When using TokenStorage
-import Letopis         // When providing a custom logger
+// Optionally
+import Letopis         // For passing custom logger
 ```
 
 ## Minimal Setup
 
-Here's the minimal code to get started:
+Here's the minimum code to get started:
 
 ```swift
 import Nevod
-import Storage
 
-// 1. Define your service domain
+// 1. Define service domain
 enum MyDomain: ServiceDomain {
     case api
 
@@ -161,18 +135,72 @@ let config = NetworkConfig(
 // 3. Create network provider
 let provider = NetworkProvider(config: config)
 
-// 4. Define a route
+// 4. Define route
 let route = SimpleGetRoute<User, MyDomain>(
     endpoint: "/users/me",
     domain: .api
 )
 
-// 5. Make request
+// 5. Execute request
 let user = try await provider.perform(route)
 ```
 
-`SimpleEnvironment` is bundled with Nevod and conforms to `NetworkEnvironmentProviding`. Replace it with your own implementation if you need runtime environment switching.
+`SimpleEnvironment` is included in Nevod and implements `NetworkEnvironmentProviding`. Substitute your own implementation for environment switching if needed.
 
+## Token Storage Setup (Optional)
+
+Nevod includes built-in token storage support. To use it, implement the `KeyValueStorage` protocol:
+
+```swift
+import Nevod
+
+// Example: UserDefaults-based storage
+final class UserDefaultsStorage: KeyValueStorage {
+    private let defaults: UserDefaults
+    
+    init(userDefaults: UserDefaults = .standard) {
+        self.defaults = userDefaults
+    }
+    
+    nonisolated func string(for key: StorageKey) -> String? {
+        defaults.string(forKey: key.rawValue)
+    }
+    
+    nonisolated func data(for key: StorageKey) -> Data? {
+        defaults.data(forKey: key.rawValue)
+    }
+    
+    nonisolated func set(_ value: String?, for key: StorageKey) {
+        defaults.set(value, forKey: key.rawValue)
+    }
+    
+    nonisolated func set(_ value: Data?, for key: StorageKey) {
+        defaults.set(value, forKey: key.rawValue)
+    }
+    
+    nonisolated func remove(for key: StorageKey) {
+        defaults.removeObject(forKey: key.rawValue)
+    }
+}
+
+// Use with TokenStorage
+let storage = UserDefaultsStorage()
+let tokenStorage = TokenStorage<Token>(storage: storage)
+
+// Set up authentication interceptor
+let authInterceptor = AuthenticationInterceptor(
+    tokenStorage: tokenStorage,
+    refreshStrategy: { oldToken in
+        // Your token refresh logic
+        let newValue = try await refreshTokenAPI(oldToken?.value)
+        return Token(value: newValue)
+    }
+)
+
+let provider = NetworkProvider(config: config, interceptor: authInterceptor)
+```
+
+For production apps, consider using Keychain for secure token storage instead of UserDefaults.
 
 ## Optional: Local Package Setup
 
@@ -182,8 +210,7 @@ If you're developing Nevod locally or using it as a local package:
 ```
 YourProject/
 ├── LocalPackages/
-│   ├── Nevod/
-│   └── Storage/      # Optional helper
+│   └── Nevod/
 └── YourApp/
     └── Package.swift
 ```
@@ -194,15 +221,13 @@ YourProject/
 let package = Package(
     name: "YourApp",
     dependencies: [
-        .package(path: "../LocalPackages/Nevod"),
-        // .package(path: "../LocalPackages/Storage") // Optional helper
+        .package(path: "../LocalPackages/Nevod")
     ],
     targets: [
         .target(
             name: "YourApp",
             dependencies: [
-                .product(name: "Nevod", package: "Nevod"),
-                // .product(name: "Storage", package: "Storage") // Optional
+                .product(name: "Nevod", package: "Nevod")
             ]
         )
     ]
@@ -215,10 +240,10 @@ let package = Package(
 
 **Solution**:
 1. Clean build folder: `Product` → `Clean Build Folder` (Cmd+Shift+K)
-2. Reset package cache: `File` → `Packages` → `Reset Package Caches`
+2. Reset package caches: `File` → `Packages` → `Reset Package Caches`
 3. Update packages: `File` → `Packages` → `Update to Latest Package Versions`
 
-### Issue: Dependency resolution failed
+### Issue: Failed to resolve dependencies
 
 **Solution**:
 1. Check Swift version compatibility (requires 6.2+)
@@ -226,7 +251,7 @@ let package = Package(
 3. Verify Package.swift syntax
 4. Clear derived data: `~/Library/Developer/Xcode/DerivedData`
 
-### Issue: Build errors after updating
+### Issue: Build errors after update
 
 **Solution**:
 ```bash
@@ -249,9 +274,9 @@ swift build
 
 ## Getting Help
 
-If you encounter issues:
+If you run into issues:
 1. Check this installation guide
-2. Review [Quick Start](./QuickStart.md)
+2. Review the [Quick Start](./QuickStart.md)
 3. Search [GitHub Issues](https://github.com/yourusername/Nevod/issues)
 4. Open a new issue with:
    - Your environment (iOS/macOS version, Xcode version)

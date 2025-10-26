@@ -4,8 +4,43 @@ import FoundationNetworking
 #endif
 import Testing
 @testable import Nevod
-import Core
-import Storage
+
+// MARK: - Mock Storage
+
+private final class MockStorage: KeyValueStorage, @unchecked Sendable {
+    private var storage: [String: Any] = [:]
+    private let lock = NSLock()
+    
+    nonisolated func string(for key: StorageKey) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage[key.rawValue] as? String
+    }
+    
+    nonisolated func data(for key: StorageKey) -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage[key.rawValue] as? Data
+    }
+    
+    nonisolated func set(_ value: String?, for key: StorageKey) {
+        lock.lock()
+        defer { lock.unlock() }
+        storage[key.rawValue] = value
+    }
+    
+    nonisolated func set(_ value: Data?, for key: StorageKey) {
+        lock.lock()
+        defer { lock.unlock() }
+        storage[key.rawValue] = value
+    }
+    
+    nonisolated func remove(for key: StorageKey) {
+        lock.lock()
+        defer { lock.unlock() }
+        storage.removeValue(forKey: key.rawValue)
+    }
+}
 
 private final class MockSession: URLSessionProtocol, @unchecked Sendable {
     let handler: (URLRequest) async throws -> (Data, URLResponse)
@@ -40,13 +75,11 @@ struct NevodTests {
     ) -> NetworkProvider {
         let session = MockSession(handler: handler)
         let networkConfig = NetworkConfig(
-            urls: [
-                TestDomain.api: (
-                    test: URL(string: "https://example.com")!,
-                    prod: URL(string: "https://example.com")!
+            environments: [
+                TestDomain.api: SimpleEnvironment(
+                    baseURL: URL(string: "https://example.com")!
                 )
             ],
-            environment: .test,
             timeout: 1
         )
         return NetworkProvider(config: networkConfig, session: session, interceptor: interceptor)
@@ -119,17 +152,15 @@ struct NevodTests {
     }
 
     @Test func tokenRefreshAndRetry() async {
-        let defaults = UserDefaults(suiteName: UUID().uuidString)!
-        let storageProvider = UserDefaultsStorage(userDefaults: defaults)
-        let storage = TokenStorage(storage: storageProvider)
-        await storage.setToken(Token(value: "expired"))
-        #expect(storageProvider.string(for: .token) == "expired")
-
+        let mockStorage = MockStorage()
+        let storage = TokenStorage<Token>(storage: mockStorage)
+        await storage.save(Token(value: "expired"))
+        
         var callCount = 0
         let authInterceptor = AuthenticationInterceptor(
             tokenStorage: storage,
-            refreshToken: {
-                return "refreshed"
+            refreshStrategy: { _ in
+                return Token(value: "refreshed")
             }
         )
 
@@ -150,7 +181,8 @@ struct NevodTests {
 
         let result: Result<TestModel, NetworkError> = await provider.request(TestRoute())
         #expect(callCount == 2)
-        #expect(await storage.tokenValue() == "refreshed")
+        let token = await storage.load()
+        #expect(token?.value == "refreshed")
         switch result {
         case .success(let model):
             #expect(model == TestModel(id: 1))
@@ -223,14 +255,16 @@ struct NevodTests {
     }
 
     @Test func interceptorChain() async {
-        let defaults = UserDefaults(suiteName: UUID().uuidString)!
-        let storageProvider = UserDefaultsStorage(userDefaults: defaults)
-        let storage = TokenStorage(storage: storageProvider)
-        await storage.setToken(Token(value: "mytoken"))
+        let mockStorage = MockStorage()
+        let storage = TokenStorage<Token>(storage: mockStorage)
+        await storage.save(Token(value: "mytoken"))
 
         let chain = InterceptorChain([
             HeadersInterceptor(headers: ["User-Agent": "TestApp/1.0"]),
-            AuthenticationInterceptor(tokenStorage: storage, refreshToken: { "newtoken" })
+            AuthenticationInterceptor(
+                tokenStorage: storage,
+                refreshStrategy: { _ in Token(value: "newtoken") }
+            )
         ])
 
         let provider = makeProvider({ request in
@@ -259,13 +293,11 @@ struct NevodTests {
         }
 
         let config = NetworkConfig(
-            urls: [
-                TestDomain.api: (
-                    test: URL(string: "https://example.com")!,
-                    prod: URL(string: "https://example.com")!
+            environments: [
+                TestDomain.api: SimpleEnvironment(
+                    baseURL: URL(string: "https://example.com")!
                 )
             ],
-            environment: .test,
             timeout: 1
         )
 

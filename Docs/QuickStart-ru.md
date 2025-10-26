@@ -2,31 +2,30 @@
 
 [English version](./QuickStart.md)
 
-Начните работу с Nevod за несколько минут. Это руководство охватывает наиболее распространенные сценарии использования.
+Начните работу с Nevod за несколько минут. Это руководство охватывает наиболее распространённые случаи использования.
 
 ## Содержание
 
 - [Базовая настройка](#базовая-настройка)
 - [Простые запросы](#простые-запросы)
-- [Кастомные Routes](#кастомные-routes)
+- [Кастомные маршруты](#кастомные-маршруты)
 - [Аутентификация](#аутентификация)
 - [Логирование](#логирование)
 - [Обработка ошибок](#обработка-ошибок)
 - [Множественные сервисы](#множественные-сервисы)
-- [Продвинутые возможности](#продвинутые-возможности)
+- [Продвинутые функции](#продвинутые-функции)
 
 ## Базовая настройка
 
-### 1. Импортируйте необходимые модули
+### 1. Импорт необходимых модулей
 
 ```swift
 import Nevod
 ```
 
-Если вы используете встроенный `TokenStorage`, добавьте в проект пакет `Storage` и импортируйте модуль `Storage`. Структурное логирование через Letopis остаётся опциональным (`import Letopis`).
+Nevod включает встроенную поддержку хранения токенов. Структурированное логирование через Letopis остаётся опциональным (`import Letopis`).
 
-
-### 2. Определите домен вашего сервиса
+### 2. Определите ваш домен сервиса
 
 ```swift
 enum MyDomain: ServiceDomain {
@@ -58,8 +57,7 @@ let config = NetworkConfig(
 )
 ```
 
-`SimpleEnvironment` входит в поставку Nevod и реализует `NetworkEnvironmentProviding`. При необходимости создайте собственную реализацию (например, для разных сред).
-
+`SimpleEnvironment` поставляется с Nevod и соответствует `NetworkEnvironmentProviding`. Предоставьте свою реализацию, если нужна динамическая конфигурация (например, staging vs production).
 
 ### 4. Создайте Network Provider
 
@@ -69,7 +67,7 @@ let provider = NetworkProvider(config: config)
 
 ## Простые запросы
 
-Nevod предоставляет готовые типы routes для распространенных HTTP методов:
+Nevod предоставляет готовые типы маршрутов для распространённых HTTP методов:
 
 ### GET запрос
 
@@ -85,21 +83,21 @@ let route = SimpleGetRoute<User, MyDomain>(
     domain: .api
 )
 
-// Стиль async/await throws
+// Стиль async/await с throws
 do {
     let user = try await provider.perform(route)
-    print("Пользователь: \(user.name)")
+    print("User: \(user.name)")
 } catch {
-    print("Ошибка: \(error)")
+    print("Error: \(error)")
 }
 
 // Стиль Result
 let result = await provider.request(route)
 switch result {
 case .success(let user):
-    print("Пользователь: \(user.name)")
+    print("User: \(user.name)")
 case .failure(let error):
-    print("Ошибка: \(error)")
+    print("Error: \(error)")
 }
 ```
 
@@ -115,13 +113,13 @@ let route = SimplePostRoute<CreateUserResponse, MyDomain>(
     endpoint: "/users",
     domain: .api,
     parameters: [
-        "name": "Иван Иванов",
-        "email": "ivan@example.com"
+        "name": "John Doe",
+        "email": "john@example.com"
     ]
 )
 
 let response = try await provider.perform(route)
-print("Создан пользователь с ID: \(response.id)")
+print("Created user with ID: \(response.id)")
 ```
 
 ### PUT запрос
@@ -130,7 +128,7 @@ print("Создан пользователь с ID: \(response.id)")
 let route = SimplePutRoute<User, MyDomain>(
     endpoint: "/users/123",
     domain: .api,
-    parameters: ["name": "Мария Петрова"]
+    parameters: ["name": "Jane Doe"]
 )
 
 let updatedUser = try await provider.perform(route)
@@ -151,9 +149,9 @@ let route = SimpleDeleteRoute<DeleteResponse, MyDomain>(
 let response = try await provider.perform(route)
 ```
 
-## Кастомные Routes
+## Кастомные маршруты
 
-Для более сложных запросов создайте кастомные routes:
+Для более сложных запросов создайте кастомные маршруты:
 
 ```swift
 struct GetUserPostsRoute: Route {
@@ -222,29 +220,69 @@ struct UploadRoute: Route {
 
 ## Аутентификация
 
-### Настройка хранилища токенов
+Nevod предоставляет гибкую generic систему токенов, которая работает с любыми типами токенов.
+
+### Простая Bearer Token аутентификация
+
+#### 1. Реализуйте KeyValueStorage
 
 ```swift
-import Storage
-
-let storage = UserDefaultsStorage()
-let tokenStorage = TokenStorage(storage: storage)
+final class UserDefaultsStorage: KeyValueStorage {
+    private let defaults: UserDefaults
+    
+    init(userDefaults: UserDefaults = .standard) {
+        self.defaults = userDefaults
+    }
+    
+    nonisolated func string(for key: StorageKey) -> String? {
+        defaults.string(forKey: key.rawValue)
+    }
+    
+    nonisolated func data(for key: StorageKey) -> Data? {
+        defaults.data(forKey: key.rawValue)
+    }
+    
+    nonisolated func set(_ value: String?, for key: StorageKey) {
+        defaults.set(value, forKey: key.rawValue)
+    }
+    
+    nonisolated func set(_ value: Data?, for key: StorageKey) {
+        defaults.set(value, forKey: key.rawValue)
+    }
+    
+    nonisolated func remove(for key: StorageKey) {
+        defaults.removeObject(forKey: key.rawValue)
+    }
+}
 ```
 
-### Создание Auth Interceptor
+**Примечание**: Для production приложений используйте Keychain вместо UserDefaults для безопасного хранения токенов.
+
+#### 2. Настройте Token Storage
+
+```swift
+let storage = UserDefaultsStorage()
+let tokenStorage = TokenStorage<Token>(storage: storage)
+```
+
+#### 3. Создайте Auth Interceptor
 
 ```swift
 let authInterceptor = AuthenticationInterceptor(
     tokenStorage: tokenStorage,
-    refreshToken: {
+    refreshStrategy: { oldToken in
         // Ваша логика обновления токена
-        let newToken = try await refreshAccessToken()
-        return newToken
+        guard let oldToken = oldToken else {
+            throw NetworkError.unauthorized
+        }
+        
+        let newTokenValue = try await refreshAccessToken(oldToken.value)
+        return Token(value: newTokenValue)
     }
 )
 ```
 
-### Создание Provider с аутентификацией
+#### 4. Создайте Provider с аутентификацией
 
 ```swift
 let provider = NetworkProvider(
@@ -256,10 +294,106 @@ let provider = NetworkProvider(
 // и автоматически повторяться при 401 с обновлением токена
 ```
 
+### Кастомные типы токенов (OAuth)
+
+Для более сложных схем аутентификации, таких как OAuth, создайте кастомный тип токена:
+
+```swift
+struct OAuthToken: TokenModel, Codable {
+    let accessToken: String
+    let refreshToken: String
+    let expiresAt: Date
+    
+    // Соответствие TokenModel
+    func authorize(_ request: inout URLRequest) {
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+    }
+    
+    func encode() throws -> Data {
+        try JSONEncoder().encode(self)
+    }
+    
+    static func decode(from data: Data) throws -> Self {
+        try JSONDecoder().decode(Self.self, from: data)
+    }
+}
+
+// Используйте с хранилищем
+let oauthStorage = TokenStorage<OAuthToken>(storage: keychainStorage)
+
+let authInterceptor = AuthenticationInterceptor(
+    tokenStorage: oauthStorage,
+    refreshStrategy: { oldToken in
+        guard let oldToken = oldToken else {
+            throw NetworkError.unauthorized
+        }
+        
+        // Вызываем endpoint обновления
+        let response: OAuthResponse = try await baseClient.request(
+            .post,
+            path: "/oauth/refresh",
+            body: ["refresh_token": oldToken.refreshToken]
+        )
+        
+        return OAuthToken(
+            accessToken: response.accessToken,
+            refreshToken: response.refreshToken,
+            expiresAt: Date().addingTimeInterval(response.expiresIn)
+        )
+    }
+)
+```
+
+### Несколько доменов с разной аутентификацией
+
+```swift
+// OAuth для api.example.com
+let oauthStorage = TokenStorage<OAuthToken>(storage: keychainStorage)
+let oauthInterceptor = AuthenticationInterceptor(
+    tokenStorage: oauthStorage,
+    refreshStrategy: { /* OAuth refresh */ },
+    shouldAuthenticate: { request in
+        request.url?.host == "api.example.com"
+    }
+)
+
+// API Key для admin.example.com
+struct APIKeyToken: TokenModel, Codable {
+    let key: String
+    
+    func authorize(_ request: inout URLRequest) {
+        request.setValue(key, forHTTPHeaderField: "X-API-Key")
+    }
+    
+    func encode() throws -> Data {
+        try JSONEncoder().encode(self)
+    }
+    
+    static func decode(from data: Data) throws -> Self {
+        try JSONDecoder().decode(Self.self, from: data)
+    }
+}
+
+let apiKeyStorage = TokenStorage<APIKeyToken>(storage: userDefaults)
+let apiKeyInterceptor = AuthenticationInterceptor(
+    tokenStorage: apiKeyStorage,
+    refreshStrategy: { /* API key refresh */ },
+    shouldAuthenticate: { request in
+        request.url?.host == "admin.example.com"
+    }
+)
+
+// Объединяем оба interceptor'а
+let provider = NetworkProvider(
+    config: config,
+    interceptor: InterceptorChain([oauthInterceptor, apiKeyInterceptor])
+)
+```
+
 ### Полный пример аутентификации
 
 ```swift
-// 1. Авторизация
+// 1. Логин
 struct LoginResponse: Decodable {
     let accessToken: String
     let refreshToken: String
@@ -273,17 +407,17 @@ let loginRoute = SimplePostRoute<LoginResponse, MyDomain>(
 
 let loginResponse = try await provider.perform(loginRoute)
 
-// 2. Сохранение токена
-await tokenStorage.setToken(Token(value: loginResponse.accessToken))
+// 2. Сохраняем токен
+await tokenStorage.save(Token(value: loginResponse.accessToken))
 
-// 3. Все последующие запросы автоматически аутентифицированы
+// 3. Все последующие запросы автоматически аутентифицируются
 let userRoute = SimpleGetRoute<User, MyDomain>(endpoint: "/users/me", domain: .api)
 let user = try await provider.perform(userRoute)
 ```
 
 ## Логирование
 
-### Логирование HTTP запросов/ответов (OSLog)
+### HTTP запросов/ответов (OSLog)
 
 ```swift
 import OSLog
@@ -303,7 +437,7 @@ let provider = NetworkProvider(
 
 **Уровни логирования**:
 - `.minimal` - Логирует только метод запроса и URL
-- `.detailed` - Добавляет заголовки и статус коды
+- `.detailed` - Добавляет заголовки и коды статуса
 - `.verbose` - Включает тела запросов/ответов
 
 ### Логирование внутренних событий (Letopis)
@@ -354,7 +488,7 @@ public enum NetworkError: Error {
 ```swift
 do {
     let user = try await provider.perform(route)
-    print("Успех: \(user)")
+    print("Success: \(user)")
 } catch let error as NetworkError {
     switch error {
     case .unauthorized:
@@ -362,9 +496,9 @@ do {
         print("Пользователь не авторизован")
     case .timeout:
         // Показать опцию повтора
-        print("Превышено время ожидания запроса")
+        print("Запрос превысил время ожидания")
     case .noConnection:
-        // Показать сообщение об оффлайн режиме
+        // Показать сообщение об отсутствии сети
         print("Нет подключения к интернету")
     case .parsingError:
         // Логировать проблему парсинга
@@ -381,7 +515,7 @@ do {
 
 ## Множественные сервисы
 
-### Определение множественных доменов
+### Определите несколько доменов
 
 ```swift
 enum AppDomains: ServiceDomain {
@@ -399,7 +533,7 @@ enum AppDomains: ServiceDomain {
 }
 ```
 
-### Настройка множественных URL
+### Сконфигурируйте несколько URL
 
 ```swift
 let config = NetworkConfig(
@@ -417,17 +551,16 @@ let config = NetworkConfig(
 )
 ```
 
-
-### Использование различных доменов
+### Используйте разные домены
 
 ```swift
-// Запрос к основному API
+// Запрос к главному API
 let userRoute = SimpleGetRoute<User, AppDomains>(
     endpoint: "/users/me",
     domain: .mainAPI  // → api.example.com
 )
 
-// Запрос к аналитике
+// Запрос аналитики
 let trackRoute = SimplePostRoute<TrackResponse, AppDomains>(
     endpoint: "/events",
     domain: .analyticsAPI,  // → analytics.example.com
@@ -441,9 +574,9 @@ let imageRoute = SimpleGetRoute<Data, AppDomains>(
 )
 ```
 
-## Продвинутые возможности
+## Продвинутые функции
 
-### Комбинирование множественных Interceptor'ов
+### Объединение нескольких Interceptor'ов
 
 ```swift
 let provider = NetworkProvider(
@@ -456,7 +589,7 @@ let provider = NetworkProvider(
         ]),
         AuthenticationInterceptor(
             tokenStorage: tokenStorage,
-            refreshToken: { try await refreshToken() }
+            refreshStrategy: { try await refreshToken($0) }
         )
     ])
 )
@@ -467,7 +600,7 @@ let provider = NetworkProvider(
 2. Headers добавляет кастомные заголовки
 3. Auth добавляет заголовок Authorization
 4. Запрос отправляется в сеть
-5. При 401: Auth обновляет токен и повторяет запрос
+5. При 401: Auth обновляет токен и повторяет
 6. Ответ логируется
 
 ### Кастомный Interceptor
@@ -500,7 +633,7 @@ let provider = NetworkProvider(
 )
 ```
 
-### Ответ как сырые данные
+### Ответ в виде Raw Data
 
 ```swift
 let route = SimpleGetRoute<Data, MyDomain>(
@@ -512,7 +645,7 @@ let pdfData = try await provider.perform(route)
 // Используйте pdfData напрямую
 ```
 
-### Делегирование задач для отслеживания прогресса
+### Task Delegation для отслеживания прогресса
 
 ```swift
 class DownloadDelegate: NSObject, URLSessionTaskDelegate {
@@ -534,19 +667,21 @@ let result = await provider.request(uploadRoute, delegate: delegate)
 
 ## Лучшие практики
 
-1. **Переиспользуйте NetworkProvider**: Создайте один раз, используйте во всем приложении
-2. **Четко определяйте домены**: Используйте осмысленные идентификаторы доменов
+1. **Переиспользуйте NetworkProvider**: Создайте один раз, используйте во всём приложении
+2. **Чётко определяйте домены**: Используйте значимые идентификаторы доменов
 3. **Грамотно обрабатывайте ошибки**: Всегда обрабатывайте случаи NetworkError
 4. **Используйте Simple Routes**: Предпочитайте `SimpleGetRoute` и т.д. для стандартных запросов
-5. **Кастомные Routes для сложных случаев**: Создавайте кастомные Route только когда необходимо
-6. **Порядок Interceptor'ов важен**: Размещайте логирование первым, аутентификацию последней в цепочке
-7. **Переключение окружений**: Создавайте отдельные `NetworkConfig` для разных окружений и внедряйте нужную конфигурацию (staging, QA, production)
+5. **Кастомные Routes для сложных случаев**: Создавайте кастомные Route только при необходимости
+6. **Порядок Interceptor'ов важен**: Ставьте логирование первым, auth последним в цепочке
+7. **Переключение окружений**: Создавайте отдельные экземпляры `NetworkConfig` для каждого окружения
 8. **Безопасность токенов**: Используйте безопасное хранилище (Keychain) для production токенов
+9. **Generic токены**: Определяйте кастомные типы токенов для сложных схем аутентификации
+10. **Refresh Strategy**: Держите логику refresh внешней по отношению к моделям токенов
 
 ## Следующие шаги
 
-- Изучите [Руководство по установке](./Installation-ru.md) для подробностей настройки
-- Изучите примеры в репозитории
+- Изучите [Руководство по установке](./Installation-ru.md) для деталей настройки
+- Просмотрите примеры исходного кода в репозитории
 
 ## Общие паттерны
 

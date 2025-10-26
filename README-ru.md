@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://swift.org">
-    <img src="https://img.shields.io/badge/Swift-6.1+-orange.svg?logo=swift" />
+    <img src="https://img.shields.io/badge/Swift-6.2+-orange.svg?logo=swift" />
   </a>
   <a href="https://swift.org/package-manager/">
     <img src="https://img.shields.io/badge/SPM-compatible-green.svg" />
@@ -36,7 +36,8 @@ Nevod — это библиотека для работы с сетью в Swift
 - **Простой API** - Минимум шаблонного кода для базовых запросов
 - **Паттерн Interceptor** - Гибкая система middleware для адаптации запросов и retry-логики
 - **Множественные сервисы** - Легкое управление различными API endpoint'ами
-- **Поддержка OAuth** - Встроенная обработка автоматического обновления токенов
+- **Generic система токенов** - Гибкая аутентификация с любыми типами токенов
+- **Поддержка OAuth** - Встроенная обработка автоматического обновления токенов с кастомными стратегиями
 - **Типобезопасность** - Protocol-oriented дизайн с полной типобезопасностью
 - **Современный Swift** - async/await и actor-based concurrency
 - **Тестируемость** - Архитектура, дружественная к dependency injection
@@ -88,10 +89,16 @@ dependencies: [
 
 ### Interceptors (Перехватчики)
 Модифицируйте запросы и обрабатывайте повторные попытки:
-- `AuthenticationInterceptor` - управление OAuth токенами
+- `AuthenticationInterceptor<Token>` - Generic управление токенами с кастомными стратегиями refresh
 - `LoggingInterceptor` - логирование HTTP запросов/ответов
 - `HeadersInterceptor` - добавление кастомных заголовков
 - `InterceptorChain` - объединение нескольких interceptor'ов
+
+### Система токенов
+Гибкая аутентификация с любыми типами токенов:
+- Протокол `TokenModel` - Определите свои типы токенов
+- `TokenStorage<Token>` - Generic хранилище токенов
+- Встроенный `Token` - Простая реализация Bearer токена
 
 ### Network Provider (Сетевой провайдер)
 Actor-based исполнитель сетевых запросов с автоматическими повторными попытками и обработкой ошибок.
@@ -104,14 +111,90 @@ let route = SimpleGetRoute<User, MyDomain>(endpoint: "/users/me", domain: .api)
 let user = try await provider.perform(route)
 ```
 
-### С аутентификацией
+### С простым Bearer токеном
 ```swift
+// Создаем хранилище токенов
+let storage = TokenStorage<Token>(storage: myKeyValueStorage)
+
+// Создаем interceptor аутентификации
+let authInterceptor = AuthenticationInterceptor(
+    tokenStorage: storage,
+    refreshStrategy: { oldToken in
+        // Ваша логика обновления токена
+        let newTokenValue = try await authService.refreshToken(oldToken?.value)
+        return Token(value: newTokenValue)
+    }
+)
+
+let provider = NetworkProvider(config: config, interceptor: authInterceptor)
+```
+
+### С кастомным типом токена (OAuth)
+```swift
+// Определяем свой токен
+struct OAuthToken: TokenModel, Codable {
+    let accessToken: String
+    let refreshToken: String
+    let expiresAt: Date
+    
+    func authorize(_ request: inout URLRequest) {
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+    }
+    
+    func encode() throws -> Data {
+        try JSONEncoder().encode(self)
+    }
+    
+    static func decode(from data: Data) throws -> Self {
+        try JSONDecoder().decode(Self.self, from: data)
+    }
+}
+
+// Используем с хранилищем и interceptor'ом
+let storage = TokenStorage<OAuthToken>(storage: myStorage)
+let authInterceptor = AuthenticationInterceptor(
+    tokenStorage: storage,
+    refreshStrategy: { oldToken in
+        guard let oldToken = oldToken else { throw NetworkError.unauthorized }
+        
+        // Вызываем endpoint обновления
+        let response: OAuthResponse = try await baseClient.request(
+            .post,
+            path: "/oauth/refresh",
+            body: ["refresh_token": oldToken.refreshToken]
+        )
+        
+        return OAuthToken(
+            accessToken: response.accessToken,
+            refreshToken: response.refreshToken,
+            expiresAt: Date().addingTimeInterval(response.expiresIn)
+        )
+    }
+)
+```
+
+### Несколько доменов с разной аутентификацией
+```swift
+// OAuth для api.example.com
+let oauthStorage = TokenStorage<OAuthToken>(storage: keychainStorage)
+let oauthInterceptor = AuthenticationInterceptor(
+    tokenStorage: oauthStorage,
+    refreshStrategy: { /* OAuth refresh */ },
+    shouldAuthenticate: { $0.url?.host == "api.example.com" }
+)
+
+// API Key для admin.example.com
+let apiKeyStorage = TokenStorage<APIKeyToken>(storage: userDefaults)
+let apiKeyInterceptor = AuthenticationInterceptor(
+    tokenStorage: apiKeyStorage,
+    refreshStrategy: { /* API key refresh */ },
+    shouldAuthenticate: { $0.url?.host == "admin.example.com" }
+)
+
+// Объединяем оба
 let provider = NetworkProvider(
     config: config,
-    interceptor: AuthenticationInterceptor(
-        tokenStorage: tokenStorage,
-        refreshToken: { try await authService.refreshToken() }
-    )
+    interceptor: InterceptorChain([oauthInterceptor, apiKeyInterceptor])
 )
 ```
 
@@ -122,10 +205,19 @@ let provider = NetworkProvider(
     interceptor: InterceptorChain([
         LoggingInterceptor(logger: logger, logLevel: .verbose),
         HeadersInterceptor(headers: ["User-Agent": "MyApp/1.0"]),
-        AuthenticationInterceptor(tokenStorage: tokenStorage, refreshToken: refreshBlock)
+        AuthenticationInterceptor(tokenStorage: storage, refreshStrategy: refreshBlock)
     ])
 )
 ```
+
+## Преимущества архитектуры
+
+✅ **Разделение ответственности** - Модели токенов, хранение и логика refresh разделены  
+✅ **Гибкость** - Поддержка любых типов токенов через протоколы  
+✅ **Масштабируемость** - Несколько interceptor'ов для разных доменов  
+✅ **Типобезопасность** - Строгая типизация через generics  
+✅ **Тестируемость** - Легко мокировать хранилище и стратегии refresh  
+✅ **Чистая архитектура** - Внешний код настраивает поведение  
 
 ## Требования
 
