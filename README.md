@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://swift.org">
-    <img src="https://img.shields.io/badge/Swift-6.1+-orange.svg?logo=swift" />
+    <img src="https://img.shields.io/badge/Swift-6.2+-orange.svg?logo=swift" />
   </a>
   <a href="https://swift.org/package-manager/">
     <img src="https://img.shields.io/badge/SPM-compatible-green.svg" />
@@ -69,7 +69,7 @@ See [Installation Guide](./Docs/Installation.md) for detailed setup instructions
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/yourusername/Nevod.git", from: "1.0.0")
+    .package(url: "https://github.com/yourusername/Nevod.git", from: "0.0.1")
 ]
 ```
 
@@ -130,13 +130,11 @@ let provider = NetworkProvider(
 ## Requirements
 
 - iOS 17.0+ / macOS 15.0+
-- Swift 6.1+
+- Swift 6.2+
 - Xcode 16.0+
 
 ## Dependencies
 
-- [Core](../Core) - Environment and core utilities
-- [Storage](../Storage) - Key-value storage abstraction
 - [Letopis](https://github.com/andrey-torlopov/Letopis) - Structured logging framework
 
 ## License

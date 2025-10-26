@@ -41,7 +41,7 @@ let package = Package(
         .macOS(.v15)
     ],
     dependencies: [
-        .package(url: "https://github.com/yourusername/Nevod.git", from: "1.0.0")
+        .package(url: "https://github.com/yourusername/Nevod.git", from: "0.0.1")
     ],
     targets: [
         .target(
@@ -169,7 +169,7 @@ import Storage
 // 1. Define your service domain
 enum MyDomain: ServiceDomain {
     case api
-    
+
     var identifier: String {
         switch self {
         case .api: return "api"

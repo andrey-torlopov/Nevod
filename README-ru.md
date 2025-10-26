@@ -69,7 +69,7 @@ let user = try await provider.perform(route)
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/yourusername/Nevod.git", from: "1.0.0")
+    .package(url: "https://github.com/yourusername/Nevod.git", from: "0.0.1")
 ]
 ```
 
@@ -130,13 +130,11 @@ let provider = NetworkProvider(
 ## Требования
 
 - iOS 17.0+ / macOS 15.0+
-- Swift 6.1+
+- Swift 6.2+
 - Xcode 16.0+
 
 ## Зависимости
 
-- [Core](../Core) - Окружение и базовые утилиты
-- [Storage](../Storage) - Абстракция хранилища ключ-значение
 - [Letopis](https://github.com/andrey-torlopov/Letopis) - Фреймворк структурированного логирования
 
 ## Лицензия
