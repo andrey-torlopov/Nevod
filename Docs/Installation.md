@@ -41,7 +41,7 @@ let package = Package(
         .macOS(.v15)
     ],
     dependencies: [
-        .package(url: "https://github.com/yourusername/Nevod.git", from: "0.0.1")
+        .package(url: "git@github.com:andrey-torlopov/Nevod.git", from: "0.0.2")
     ],
     targets: [
         .target(
@@ -157,27 +157,27 @@ import Nevod
 // Example: UserDefaults-based storage
 final class UserDefaultsStorage: KeyValueStorage {
     private let defaults: UserDefaults
-    
+
     init(userDefaults: UserDefaults = .standard) {
         self.defaults = userDefaults
     }
-    
+
     nonisolated func string(for key: StorageKey) -> String? {
         defaults.string(forKey: key.rawValue)
     }
-    
+
     nonisolated func data(for key: StorageKey) -> Data? {
         defaults.data(forKey: key.rawValue)
     }
-    
+
     nonisolated func set(_ value: String?, for key: StorageKey) {
         defaults.set(value, forKey: key.rawValue)
     }
-    
+
     nonisolated func set(_ value: Data?, for key: StorageKey) {
         defaults.set(value, forKey: key.rawValue)
     }
-    
+
     nonisolated func remove(for key: StorageKey) {
         defaults.removeObject(forKey: key.rawValue)
     }

@@ -70,7 +70,7 @@ let user = try await provider.perform(route)
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/yourusername/Nevod.git", from: "0.0.1")
+    .package(url: "git@github.com:andrey-torlopov/Nevod.git", from: "0.0.2")
 ]
 ```
 
@@ -136,15 +136,15 @@ struct OAuthToken: TokenModel, Codable {
     let accessToken: String
     let refreshToken: String
     let expiresAt: Date
-    
+
     func authorize(_ request: inout URLRequest) {
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
     }
-    
+
     func encode() throws -> Data {
         try JSONEncoder().encode(self)
     }
-    
+
     static func decode(from data: Data) throws -> Self {
         try JSONDecoder().decode(Self.self, from: data)
     }
@@ -156,14 +156,14 @@ let authInterceptor = AuthenticationInterceptor(
     tokenStorage: storage,
     refreshStrategy: { oldToken in
         guard let oldToken = oldToken else { throw NetworkError.unauthorized }
-        
+
         // Вызываем endpoint обновления
         let response: OAuthResponse = try await baseClient.request(
             .post,
             path: "/oauth/refresh",
             body: ["refresh_token": oldToken.refreshToken]
         )
-        
+
         return OAuthToken(
             accessToken: response.accessToken,
             refreshToken: response.refreshToken,
@@ -212,12 +212,12 @@ let provider = NetworkProvider(
 
 ## Преимущества архитектуры
 
-✅ **Разделение ответственности** - Модели токенов, хранение и логика refresh разделены  
-✅ **Гибкость** - Поддержка любых типов токенов через протоколы  
-✅ **Масштабируемость** - Несколько interceptor'ов для разных доменов  
-✅ **Типобезопасность** - Строгая типизация через generics  
-✅ **Тестируемость** - Легко мокировать хранилище и стратегии refresh  
-✅ **Чистая архитектура** - Внешний код настраивает поведение  
+✅ **Разделение ответственности** - Модели токенов, хранение и логика refresh разделены
+✅ **Гибкость** - Поддержка любых типов токенов через протоколы
+✅ **Масштабируемость** - Несколько interceptor'ов для разных доменов
+✅ **Типобезопасность** - Строгая типизация через generics
+✅ **Тестируемость** - Легко мокировать хранилище и стратегии refresh
+✅ **Чистая архитектура** - Внешний код настраивает поведение
 
 ## Требования
 
