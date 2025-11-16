@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <b>Современный, легковесный и гибкий сетевой слой для Swift с поддержкой паттерна interceptor.</b>
+  <b>Современный, легковесный и гибкий сетевой слой для Swift</b>
 </p>
 
 <p align="center">
@@ -27,197 +27,92 @@
 
 ## Обзор
 
-Nevod — это библиотека для работы с сетью в Swift, разработанная с упором на простоту и гибкость. Она предоставляет чистый API для базовых запросов, одновременно предлагая мощные возможности, такие как interceptor'ы, поддержка множественных сервисов и автоматическое обновление токенов для продвинутых сценариев использования.
-
-Построена на современном Swift concurrency (async/await) и actor-based архитектуре для потокобезопасности.
+Nevod — это библиотека для работы с сетью в Swift, разработанная с упором на простоту и гибкость. Построена на современном Swift concurrency (async/await) и actor-based архитектуре для потокобезопасности.
 
 ## Ключевые особенности
 
 - **Простой API** - Минимум шаблонного кода для базовых запросов
-- **Паттерн Interceptor** - Гибкая система middleware для адаптации запросов и retry-логики
+- **Паттерн Interceptor** - Гибкая middleware для адаптации запросов и retry-логики
+- **Множественные методы авторизации** - Bearer токены, Cookie, API ключи (заголовок и query)
+- **Generic система токенов** - Типобезопасная аутентификация с любыми типами токенов
+- **Автообновление токенов** - Встроенная поддержка OAuth с кастомными стратегиями refresh
 - **Множественные сервисы** - Легкое управление различными API endpoint'ами
-- **Generic система токенов** - Гибкая аутентификация с любыми типами токенов
-- **Поддержка OAuth** - Встроенная обработка автоматического обновления токенов с кастомными стратегиями
 - **Типобезопасность** - Protocol-oriented дизайн с полной типобезопасностью
 - **Современный Swift** - async/await и actor-based concurrency
-- **Тестируемость** - Архитектура, дружественная к dependency injection
-- **Логирование** - Интегрированная поддержка логирования запросов/ответов через OSLog и Letopis
+- **Логирование** - Интегрированное логирование запросов/ответов через OSLog
 
-## Быстрый пример
+## Быстрый старт
 
 ```swift
-// Определяем домен сервиса
+import Nevod
+
+// 1. Определяем домен сервиса
 enum MyDomain: ServiceDomain {
     case api
     var identifier: String { "api" }
 }
 
-// Создаем простой GET запрос
+// 2. Конфигурируем
+let config = NetworkConfig(
+    environments: [
+        MyDomain.api: SimpleEnvironment(
+            baseURL: URL(string: "https://api.example.com")!
+        )
+    ]
+)
+
+// 3. Создаем провайдер
+let provider = NetworkProvider(config: config)
+
+// 4. Делаем запрос
 let route = SimpleGetRoute<User, MyDomain>(
     endpoint: "/users/me",
     domain: .api
 )
 
-// Выполняем запрос
 let user = try await provider.perform(route)
 ```
 
 ## Установка
 
-См. [Руководство по установке](./Docs/Installation-ru.md) для подробных инструкций.
-
 **Swift Package Manager:**
 
 ```swift
 dependencies: [
-    .package(url: "git@github.com:andrey-torlopov/Nevod.git", from: "0.0.2")
+    .package(url: "https://github.com/andrey-torlopov/Nevod.git", from: "0.0.4")
 ]
 ```
 
+См. [Руководство по установке](./Docs/ru/Installation.md) для деталей.
+
 ## Документация
 
-- [Быстрый старт](./Docs/QuickStart-ru.md) - Начните работу за несколько минут
-- [Установка](./Docs/Installation-ru.md) - Подробная установка и зависимости
-- [API Reference](./Docs/API.md) - Полная документация API
+- **[Руководство по быстрому старту](./Docs/ru/QuickStart.md)** - Начните за несколько минут
+- **[Руководство по аутентификации](./Docs/ru/Authentication.md)** - Bearer, Cookie, API Key авторизация
+- **[Установка](./Docs/ru/Installation.md)** - Настройка и зависимости
 
-## Основные компоненты
+## Пример аутентификации
 
-### Routes (Маршруты)
-Определяйте API endpoint'ы с типобезопасными маршрутами:
-- Протокол `Route` для кастомных endpoint'ов
-- `SimpleGetRoute`, `SimplePostRoute`, `SimplePutRoute`, `SimpleDeleteRoute` для типичных случаев
-
-### Interceptors (Перехватчики)
-Модифицируйте запросы и обрабатывайте повторные попытки:
-- `AuthenticationInterceptor<Token>` - Generic управление токенами с кастомными стратегиями refresh
-- `LoggingInterceptor` - логирование HTTP запросов/ответов
-- `HeadersInterceptor` - добавление кастомных заголовков
-- `InterceptorChain` - объединение нескольких interceptor'ов
-
-### Система токенов
-Гибкая аутентификация с любыми типами токенов:
-- Протокол `TokenModel` - Определите свои типы токенов
-- `TokenStorage<Token>` - Generic хранилище токенов
-- Встроенный `Token` - Простая реализация Bearer токена
-
-### Network Provider (Сетевой провайдер)
-Actor-based исполнитель сетевых запросов с автоматическими повторными попытками и обработкой ошибок.
-
-## Паттерны использования
-
-### Базовый запрос
 ```swift
-let route = SimpleGetRoute<User, MyDomain>(endpoint: "/users/me", domain: .api)
-let user = try await provider.perform(route)
-```
-
-### С простым Bearer токеном
-```swift
-// Создаем хранилище токенов
-let storage = TokenStorage<Token>(storage: myKeyValueStorage)
-
-// Создаем interceptor аутентификации
+// Bearer Token
+let storage = TokenStorage<Token>(storage: keychain)
 let authInterceptor = AuthenticationInterceptor(
     tokenStorage: storage,
     refreshStrategy: { oldToken in
-        // Ваша логика обновления токена
-        let newTokenValue = try await authService.refreshToken(oldToken?.value)
-        return Token(value: newTokenValue)
+        let newToken = try await refreshToken(oldToken?.value)
+        return Token(value: newToken)
     }
 )
 
 let provider = NetworkProvider(config: config, interceptor: authInterceptor)
 ```
 
-### С кастомным типом токена (OAuth)
-```swift
-// Определяем свой токен
-struct OAuthToken: TokenModel, Codable {
-    let accessToken: String
-    let refreshToken: String
-    let expiresAt: Date
+## Встроенные типы токенов
 
-    func authorize(_ request: inout URLRequest) {
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-    }
-
-    func encode() throws -> Data {
-        try JSONEncoder().encode(self)
-    }
-
-    static func decode(from data: Data) throws -> Self {
-        try JSONDecoder().decode(Self.self, from: data)
-    }
-}
-
-// Используем с хранилищем и interceptor'ом
-let storage = TokenStorage<OAuthToken>(storage: myStorage)
-let authInterceptor = AuthenticationInterceptor(
-    tokenStorage: storage,
-    refreshStrategy: { oldToken in
-        guard let oldToken = oldToken else { throw NetworkError.unauthorized }
-
-        // Вызываем endpoint обновления
-        let response: OAuthResponse = try await baseClient.request(
-            .post,
-            path: "/oauth/refresh",
-            body: ["refresh_token": oldToken.refreshToken]
-        )
-
-        return OAuthToken(
-            accessToken: response.accessToken,
-            refreshToken: response.refreshToken,
-            expiresAt: Date().addingTimeInterval(response.expiresIn)
-        )
-    }
-)
-```
-
-### Несколько доменов с разной аутентификацией
-```swift
-// OAuth для api.example.com
-let oauthStorage = TokenStorage<OAuthToken>(storage: keychainStorage)
-let oauthInterceptor = AuthenticationInterceptor(
-    tokenStorage: oauthStorage,
-    refreshStrategy: { /* OAuth refresh */ },
-    shouldAuthenticate: { $0.url?.host == "api.example.com" }
-)
-
-// API Key для admin.example.com
-let apiKeyStorage = TokenStorage<APIKeyToken>(storage: userDefaults)
-let apiKeyInterceptor = AuthenticationInterceptor(
-    tokenStorage: apiKeyStorage,
-    refreshStrategy: { /* API key refresh */ },
-    shouldAuthenticate: { $0.url?.host == "admin.example.com" }
-)
-
-// Объединяем оба
-let provider = NetworkProvider(
-    config: config,
-    interceptor: InterceptorChain([oauthInterceptor, apiKeyInterceptor])
-)
-```
-
-### Несколько Interceptor'ов
-```swift
-let provider = NetworkProvider(
-    config: config,
-    interceptor: InterceptorChain([
-        LoggingInterceptor(logger: logger, logLevel: .verbose),
-        HeadersInterceptor(headers: ["User-Agent": "MyApp/1.0"]),
-        AuthenticationInterceptor(tokenStorage: storage, refreshStrategy: refreshBlock)
-    ])
-)
-```
-
-## Преимущества архитектуры
-
-✅ **Разделение ответственности** - Модели токенов, хранение и логика refresh разделены
-✅ **Гибкость** - Поддержка любых типов токенов через протоколы
-✅ **Масштабируемость** - Несколько interceptor'ов для разных доменов
-✅ **Типобезопасность** - Строгая типизация через generics
-✅ **Тестируемость** - Легко мокировать хранилище и стратегии refresh
-✅ **Чистая архитектура** - Внешний код настраивает поведение
+- `Token` - Bearer токен (Authorization заголовок)
+- `CookieToken` - Аутентификация на основе сессий
+- `APIKeyToken` - API ключ в кастомном заголовке
+- `QueryAPIKeyToken` - API ключ как параметр URL
 
 ## Требования
 
@@ -227,7 +122,7 @@ let provider = NetworkProvider(
 
 ## Зависимости
 
-- [Letopis](https://github.com/andrey-torlopov/Letopis) - Фреймворк структурированного логирования
+- [Letopis](https://github.com/andrey-torlopov/Letopis) - Структурированное логирование
 
 ## Лицензия
 
