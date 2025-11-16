@@ -10,6 +10,8 @@ public enum NetworkError: Error, Equatable {
     case serverError(Int)
     case bodyEncodingFailed
     case unknown(Error)
+    case authenticationFailed
+    case invalidResponse
 
     public static func == (lhs: NetworkError, rhs: NetworkError) -> Bool {
         switch (lhs, rhs) {
@@ -18,7 +20,9 @@ public enum NetworkError: Error, Equatable {
             (.timeout, .timeout),
             (.noConnection, .noConnection),
             (.bodyEncodingFailed, .bodyEncodingFailed),
-            (.unauthorized, .unauthorized):
+            (.unauthorized, .unauthorized),
+            (.authenticationFailed, .authenticationFailed),
+            (.invalidResponse, .invalidResponse):
             return true
         case (.clientError(let lCode), .clientError(let rCode)):
             return lCode == rCode

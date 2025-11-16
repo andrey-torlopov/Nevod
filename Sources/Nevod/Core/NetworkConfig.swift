@@ -29,9 +29,7 @@ public struct NetworkConfig {
         timeout: TimeInterval = 30,
         retries: Int = 3
     ) {
-        self.environments = Dictionary(
-            uniqueKeysWithValues: environments.map { (AnyHashable($0.key), $0.value) }
-        )
+        self.environments = Dictionary(uniqueKeysWithValues: environments.map { (AnyHashable($0.key), $0.value) })
         self.timeout = timeout
         self.retries = retries
     }

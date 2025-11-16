@@ -1,13 +1,13 @@
 {
-  "originHash" : "fd5fefdd87d470d0af23db35db1e9152268e119029cbbd7419438736e00414d4",
+  "originHash" : "fed9dacca990a76a68075b20739434518c5e7b09583740a73422972ed3420aa1",
   "pins" : [
     {
       "identity" : "letopis",
       "kind" : "remoteSourceControl",
       "location" : "git@github.com:andrey-torlopov/Letopis.git",
       "state" : {
-        "revision" : "21d6d7218da4c01840d5bf2455d3a74379b009ab",
-        "version" : "0.0.10"
+        "revision" : "53c97f37910706f55133e1eb5095e13058ac2546",
+        "version" : "0.0.13"
       }
     }
   ],

@@ -10,35 +10,35 @@ import Testing
 private final class MockStorage: KeyValueStorage, @unchecked Sendable {
     private var storage: [String: Any] = [:]
     private let lock = NSLock()
-    
+
     nonisolated func string(for key: StorageKey) -> String? {
         lock.lock()
         defer { lock.unlock() }
-        return storage[key.rawValue] as? String
+        return storage[key.value] as? String
     }
-    
+
     nonisolated func data(for key: StorageKey) -> Data? {
         lock.lock()
         defer { lock.unlock() }
-        return storage[key.rawValue] as? Data
+        return storage[key.value] as? Data
     }
-    
+
     nonisolated func set(_ value: String?, for key: StorageKey) {
         lock.lock()
         defer { lock.unlock() }
-        storage[key.rawValue] = value
+        storage[key.value] = value
     }
-    
+
     nonisolated func set(_ value: Data?, for key: StorageKey) {
         lock.lock()
         defer { lock.unlock() }
-        storage[key.rawValue] = value
+        storage[key.value] = value
     }
-    
+
     nonisolated func remove(for key: StorageKey) {
         lock.lock()
         defer { lock.unlock() }
-        storage.removeValue(forKey: key.rawValue)
+        storage.removeValue(forKey: key.value)
     }
 }
 
@@ -155,7 +155,7 @@ struct NevodTests {
         let mockStorage = MockStorage()
         let storage = TokenStorage<Token>(storage: mockStorage)
         await storage.save(Token(value: "expired"))
-        
+
         var callCount = 0
         let authInterceptor = AuthenticationInterceptor(
             tokenStorage: storage,

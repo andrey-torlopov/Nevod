@@ -47,9 +47,7 @@ enum MyDomain: ServiceDomain {
 let config = NetworkConfig(
     environments: [
         MyDomain.api: SimpleEnvironment(
-            baseURL: URL(string: "https://api.example.com")!,
-            apiKey: "secret-key",
-            headers: ["X-Client-Version": "1.0"]
+            baseURL: URL(string: "https://api.example.com")!
         )
     ],
     timeout: 30,
@@ -58,6 +56,8 @@ let config = NetworkConfig(
 ```
 
 `SimpleEnvironment` поставляется с Nevod и соответствует `NetworkEnvironmentProviding`. Предоставьте свою реализацию, если нужна динамическая конфигурация (например, staging vs production).
+
+Для аутентификации используйте `AuthenticationInterceptor` с моделями токенов. Для пользовательских заголовков используйте `HeadersInterceptor`.
 
 ### 4. Создайте Network Provider
 
