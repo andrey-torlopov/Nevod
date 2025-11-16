@@ -44,7 +44,7 @@ public actor NetworkProvider {
 
         logger?.debug("Starting request to \(route.endpoint)", payload: [
             "endpoint": route.endpoint,
-            "method": route.method.rawValue,
+            "method": route.method.stringValue,
             "max_attempts": String(attempts)
         ])
 

@@ -71,7 +71,7 @@ public extension Route {
             }
             .flatMap { (url, env) -> Result<URLRequest, NetworkError> in
                 var request = URLRequest(url: url)
-                request.httpMethod = method.rawValue
+                request.httpMethod = method.stringValue
                 request.timeoutInterval = config.timeout
 
                 // Set body if needed

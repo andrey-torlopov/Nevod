@@ -1,7 +1,9 @@
 public enum HTTPMethod: String {
-    case get = "GET"
-    case post = "POST"
-    case put = "PUT"
-    case patch = "PATCH"
-    case delete = "DELETE"
+    case get
+    case post
+    case put
+    case patch
+    case delete
+
+    public var stringValue: String { self.rawValue.uppercased() }
 }
