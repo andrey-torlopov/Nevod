@@ -16,7 +16,7 @@ let package = Package(
             targets: ["Nevod"]),
     ],
     dependencies: [
-        .package(url: "git@github.com:andrey-torlopov/Letopis.git", from: "0.0.13")
+        .package(url: "https://github.com/andrey-torlopov/Letopis.git", from: "0.0.13")
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.

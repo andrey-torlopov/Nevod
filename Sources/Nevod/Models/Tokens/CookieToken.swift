@@ -83,6 +83,10 @@ private struct CookieCodable: Codable {
             properties[.expires] = expiresDate
         }
 
+        if isHTTPOnly {
+            properties[HTTPCookiePropertyKey(rawValue: "HttpOnly")] = true
+        }
+
         return HTTPCookie(properties: properties)
     }
 }

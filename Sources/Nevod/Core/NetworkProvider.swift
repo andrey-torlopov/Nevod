@@ -8,10 +8,11 @@ import Letopis
 /// - Simple usage: Create with just config for basic requests
 /// - Advanced usage: Add interceptor for auth, logging, custom headers, etc.
 public actor NetworkProvider {
-    nonisolated(unsafe) private let session: URLSessionProtocol
+    private let session: URLSessionProtocol
     private let config: NetworkConfig
     private let interceptor: (any RequestInterceptor)?
     private let logger: Letopis?
+    private let rateLimiter: (any RateLimiting)?
 
     /// Creates a network provider
     /// - Parameters:
@@ -23,12 +24,20 @@ public actor NetworkProvider {
         config: NetworkConfig,
         session: URLSessionProtocol = URLSessionType.shared,
         interceptor: (any RequestInterceptor)? = nil,
+        rateLimiter: (any RateLimiting)? = nil,
         logger: Letopis? = Letopis(interceptors: [ConsoleInterceptor()])
     ) {
         self.config = config
         self.session = session
         self.interceptor = interceptor
         self.logger = logger
+        if let rateLimiter = rateLimiter {
+            self.rateLimiter = rateLimiter
+        } else if let rateLimit = config.rateLimit {
+            self.rateLimiter = RateLimiter(configuration: rateLimit)
+        } else {
+            self.rateLimiter = nil
+        }
     }
 
     /// Executes a network request
@@ -40,7 +49,19 @@ public actor NetworkProvider {
         _ route: R,
         delegate: URLSessionTaskDelegate? = nil
     ) async -> Result<R.Response, NetworkError> {
-        let attempts = max(1, config.retries)
+        // Use RetryPolicy if available, otherwise fall back to config.retries
+        let attempts: Int
+        let policy: RetryPolicy?
+
+        if let retryPolicy = config.retryPolicy {
+            attempts = retryPolicy.maxAttempts
+            policy = retryPolicy
+        } else {
+            attempts = max(1, config.retries)
+            policy = nil
+        }
+
+        let currentSession = session
 
         logger?.debug("Starting request to \(route.endpoint)", payload: [
             "endpoint": route.endpoint,
@@ -48,7 +69,26 @@ public actor NetworkProvider {
             "max_attempts": String(attempts)
         ])
 
+        var lastError: NetworkError?
+
         for attempt in 0..<attempts {
+            if let rateLimiter {
+                do {
+                    try await rateLimiter.acquirePermit()
+                } catch is CancellationError {
+                    logger?.info("Request cancelled while waiting for rate limiter", payload: [
+                        "endpoint": route.endpoint
+                    ])
+                    return .failure(.cancelled)
+                } catch {
+                    logger?.error("Rate limiter failed", payload: [
+                        "endpoint": route.endpoint,
+                        "error": error.localizedDescription
+                    ])
+                    return .failure(.unknown(error))
+                }
+            }
+
             logger?.debug("Request attempt \(attempt + 1) of \(attempts)", payload: [
                 "attempt": String(attempt + 1),
                 "endpoint": route.endpoint
@@ -70,6 +110,11 @@ public actor NetworkProvider {
                 let adaptedRequest: URLRequest
                 do {
                     adaptedRequest = try await applyInterceptor(to: baseRequest)
+                } catch is CancellationError {
+                    logger?.info("Request cancelled during adaptation", payload: [
+                        "endpoint": route.endpoint
+                    ])
+                    return .failure(.cancelled)
                 } catch let error as NetworkError {
                     logger?.error("Interceptor adaptation failed", payload: [
                         "endpoint": route.endpoint,
@@ -86,7 +131,7 @@ public actor NetworkProvider {
 
                 // Execute request
                 do {
-                    let (data, response) = try await session.requestData(
+                    let (data, response) = try await currentSession.requestData(
                         for: adaptedRequest,
                         delegate: delegate
                     )
@@ -103,20 +148,64 @@ public actor NetworkProvider {
 
                     // Check for HTTP errors
                     if let httpResponse = httpResponse {
-                        if let networkError = mapHTTPError(statusCode: httpResponse.statusCode) {
-                            // Ask interceptor if we should retry
-                            if try await shouldRetry(
-                                request: adaptedRequest,
-                                response: httpResponse,
-                                error: networkError
-                            ) {
+                        if let networkError = mapHTTPError(statusCode: httpResponse.statusCode, data: data, response: httpResponse) {
+                            lastError = networkError
+
+                            var shouldRetryRequest = false
+                            do {
+                                shouldRetryRequest = try await shouldRetry(
+                                    request: adaptedRequest,
+                                    response: httpResponse,
+                                    error: networkError
+                                )
+                            } catch is CancellationError {
+                                logger?.info("Request cancelled while evaluating retry", payload: [
+                                    "endpoint": route.endpoint
+                                ])
+                                return .failure(.cancelled)
+                            } catch let error as NetworkError {
+                                logger?.error("Retry interceptor failed", payload: [
+                                    "endpoint": route.endpoint,
+                                    "error": String(describing: error)
+                                ])
+                                return .failure(error)
+                            } catch {
+                                logger?.error("Retry interceptor failed with unknown error", payload: [
+                                    "endpoint": route.endpoint,
+                                    "error": error.localizedDescription
+                                ])
+                                return .failure(.unknown(error))
+                            }
+
+                            if !shouldRetryRequest {
+                                shouldRetryRequest = shouldRetryOnError(networkError, attempt: attempt, maxAttempts: attempts)
+                            }
+
+                            if shouldRetryRequest, attempt < attempts - 1 {
                                 logger?.info("Retrying request after HTTP error", payload: [
                                     "endpoint": route.endpoint,
                                     "status_code": String(httpResponse.statusCode),
                                     "error": String(describing: networkError),
                                     "attempt": String(attempt + 1)
                                 ])
-                                continue // Retry
+
+                                if let policy = policy {
+                                    let delay = policy.delay(for: attempt)
+                                    logger?.debug("Waiting \(delay)s before retry", payload: [
+                                        "delay": String(format: "%.2f", delay),
+                                        "attempt": String(attempt + 1)
+                                    ])
+                                }
+
+                                if let waitError = await waitBeforeRetry(attempt: attempt, policy: policy) {
+                                    logger?.info("Retry aborted while waiting", payload: [
+                                        "endpoint": route.endpoint,
+                                        "error": String(describing: waitError)
+                                    ])
+                                    return .failure(waitError)
+                                }
+
+                                continue
                             }
 
                             logger?.error("Request failed with HTTP error", payload: [
@@ -130,7 +219,7 @@ public actor NetworkProvider {
 
                     // Decode response
                     do {
-                        let decoded = try route.decode(data, using: JSONDecoder())
+                        let decoded = try route.decode(data, using: config.jsonDecoder)
                         logger?.debug("Request completed successfully", payload: [
                             "endpoint": route.endpoint,
                             "attempt": String(attempt + 1),
@@ -142,12 +231,21 @@ public actor NetworkProvider {
                             "endpoint": route.endpoint,
                             "error": error.localizedDescription
                         ])
-                        return .failure(.parsingError)
+                        return .failure(.parsingError(data: data, error: error))
                     }
 
                 } catch {
                     // Handle URLSession errors
                     let networkError = mapURLError(error)
+                    lastError = networkError
+
+                    if case .cancelled = networkError {
+                        logger?.info("Request cancelled during execution", payload: [
+                            "endpoint": route.endpoint,
+                            "attempt": String(attempt + 1)
+                        ])
+                        return .failure(networkError)
+                    }
 
                     // Retry on timeout or transient errors
                     if shouldRetryOnError(networkError, attempt: attempt, maxAttempts: attempts) {
@@ -156,6 +254,25 @@ public actor NetworkProvider {
                             "error": String(describing: networkError),
                             "attempt": String(attempt + 1)
                         ])
+
+                        if attempt < attempts - 1 {
+                            if let policy = policy {
+                                let delay = policy.delay(for: attempt)
+                                logger?.debug("Waiting \(delay)s before retry", payload: [
+                                    "delay": String(format: "%.2f", delay),
+                                    "attempt": String(attempt + 1)
+                                ])
+                            }
+
+                            if let waitError = await waitBeforeRetry(attempt: attempt, policy: policy) {
+                                logger?.info("Retry aborted while waiting", payload: [
+                                    "endpoint": route.endpoint,
+                                    "error": String(describing: waitError)
+                                ])
+                                return .failure(waitError)
+                            }
+                        }
+
                         continue
                     }
 
@@ -173,7 +290,7 @@ public actor NetworkProvider {
             "endpoint": route.endpoint,
             "total_attempts": String(attempts)
         ])
-        return .failure(.unknown(NSError(domain: "NetworkProvider", code: -1)))
+        return .failure(lastError ?? .unknown(NSError(domain: "NetworkProvider", code: -1)))
     }
 
     /// Executes a network request and throws on error (convenience method)
@@ -228,28 +345,57 @@ public actor NetworkProvider {
         return try await interceptor.retry(request, response: response, error: error)
     }
 
-    private func mapHTTPError(statusCode: Int) -> NetworkError? {
+    private func waitBeforeRetry(attempt: Int, policy: RetryPolicy?) async -> NetworkError? {
+        guard let policy else { return nil }
+        do {
+            try await policy.performDelay(for: attempt)
+            return nil
+        } catch is CancellationError {
+            return .cancelled
+        } catch {
+            return .unknown(error)
+        }
+    }
+
+    private func mapHTTPError(statusCode: Int, data: Data?, response: HTTPURLResponse?) -> NetworkError? {
         switch statusCode {
         case 200..<300:
             return nil
         case 401:
-            return .unauthorized
+            return .unauthorized(data: data, response: response)
         case 400..<500:
-            return .clientError(statusCode)
+            return .clientError(code: statusCode, data: data, response: response)
         case 500..<600:
-            return .serverError(statusCode)
+            return .serverError(code: statusCode, data: data, response: response)
         default:
             return .unknown(NSError(domain: "HTTP", code: statusCode))
         }
     }
 
     private func mapURLError(_ error: Error) -> NetworkError {
+        if error is CancellationError {
+            return .cancelled
+        }
         if let urlError = error as? URLError {
             switch urlError.code {
             case .timedOut:
                 return .timeout
-            case .notConnectedToInternet, .networkConnectionLost:
+            case .notConnectedToInternet,
+                 .networkConnectionLost,
+                 .dnsLookupFailed,
+                 .cannotFindHost,
+                 .cannotConnectToHost,
+                 .dataNotAllowed,
+                 .internationalRoamingOff,
+                 .secureConnectionFailed,
+                 .cannotLoadFromNetwork,
+                 .serverCertificateHasBadDate,
+                 .serverCertificateHasUnknownRoot,
+                 .serverCertificateUntrusted,
+                 .serverCertificateNotYetValid:
                 return .noConnection
+            case .cancelled:
+                return .cancelled
             default:
                 return .unknown(urlError)
             }
@@ -267,8 +413,13 @@ public actor NetworkProvider {
         }
 
         switch error {
-        case .timeout, .noConnection:
+        case .timeout, .noConnection, .serverError:
             return true
+        case .invalidResponse(_, let response):
+            if let status = response?.statusCode, (500...599).contains(status) {
+                return true
+            }
+            return false
         default:
             return false
         }

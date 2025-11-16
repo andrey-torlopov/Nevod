@@ -14,16 +14,19 @@ import FoundationNetworking
 /// The interceptor does NOT know HOW to refresh tokens - that logic is injected
 public actor AuthenticationInterceptor<Token: TokenModel>: RequestInterceptor {
     private let tokenStorage: TokenStorage<Token>
-    
+
     /// Strategy for refreshing tokens when they expire
     /// Receives the current (possibly expired) token and returns a new one
     private let refreshStrategy: @Sendable (Token?) async throws -> Token
-    
+
     /// Filter to determine which requests should be authenticated
     /// Useful when you have multiple domains with different auth schemes
     private let shouldAuthenticate: @Sendable (URLRequest) -> Bool
-    
+
+    private let maxRetryAttempts: Int
+    private let retryBackoff: RetryPolicy?
     private var refreshTask: Task<Token, Error>?
+    private var consecutive401s = 0
 
     /// Creates an authentication interceptor
     /// - Parameters:
@@ -33,11 +36,15 @@ public actor AuthenticationInterceptor<Token: TokenModel>: RequestInterceptor {
     public init(
         tokenStorage: TokenStorage<Token>,
         refreshStrategy: @escaping @Sendable (Token?) async throws -> Token,
-        shouldAuthenticate: @escaping @Sendable (URLRequest) -> Bool = { _ in true }
+        shouldAuthenticate: @escaping @Sendable (URLRequest) -> Bool = { _ in true },
+        maxRetryAttempts: Int = 2,
+        retryBackoff: RetryPolicy? = nil
     ) {
         self.tokenStorage = tokenStorage
         self.refreshStrategy = refreshStrategy
         self.shouldAuthenticate = shouldAuthenticate
+        self.maxRetryAttempts = max(1, maxRetryAttempts)
+        self.retryBackoff = retryBackoff
     }
 
     /// Adds authentication to the request if applicable
@@ -45,14 +52,18 @@ public actor AuthenticationInterceptor<Token: TokenModel>: RequestInterceptor {
         guard shouldAuthenticate(request) else {
             return request
         }
-        
+
         var req = request
-        
+
         // Apply token if available
-        if let token = await tokenStorage.load() {
-            token.authorize(&req)
+        do {
+            if let token = try await tokenStorage.load() {
+                token.authorize(&req)
+            }
+        } catch {
+            throw NetworkError.authenticationFailed
         }
-        
+
         return req
     }
 
@@ -63,17 +74,43 @@ public actor AuthenticationInterceptor<Token: TokenModel>: RequestInterceptor {
         error: NetworkError
     ) async throws -> Bool {
         // Only handle 401 errors for requests we authenticate
-        guard shouldAuthenticate(request),
-              case .unauthorized = error else {
+        guard shouldAuthenticate(request) else {
+            consecutive401s = 0
             return false
+        }
+
+        guard case .unauthorized = error else {
+            consecutive401s = 0
+            return false
+        }
+
+        guard consecutive401s < maxRetryAttempts else {
+            return false
+        }
+
+        let attemptIndex = consecutive401s
+        consecutive401s += 1
+
+        if let retryBackoff {
+            do {
+                try await retryBackoff.performDelay(for: attemptIndex)
+            } catch {
+                if error is CancellationError {
+                    throw NetworkError.cancelled
+                }
+                throw NetworkError.unknown(error)
+            }
         }
 
         // Refresh token and retry
         do {
             _ = try await refreshTokenIfNeeded()
+            consecutive401s = 0
             return true
+        } catch let networkError as NetworkError {
+            throw networkError
         } catch {
-            throw NetworkError.unauthorized
+            throw NetworkError.unauthorized(data: nil, response: response)
         }
     }
 
@@ -86,16 +123,16 @@ public actor AuthenticationInterceptor<Token: TokenModel>: RequestInterceptor {
         }
 
         let task = Task { () async throws -> Token in
-            // Get current token (may be nil or expired)
-            let currentToken = await tokenStorage.load()
-            
-            // Call refresh strategy (it knows what to do)
-            let newToken = try await refreshStrategy(currentToken)
-            
-            // Save new token
-            await tokenStorage.save(newToken)
-            
-            return newToken
+            do {
+                let currentToken = try await tokenStorage.load()
+                let newToken = try await refreshStrategy(currentToken)
+                try await tokenStorage.save(newToken)
+                return newToken
+            } catch let networkError as NetworkError {
+                throw networkError
+            } catch is TokenStorageError {
+                throw NetworkError.authenticationFailed
+            }
         }
 
         self.refreshTask = task

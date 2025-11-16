@@ -56,14 +56,15 @@ public extension Route {
     }
 
     /// Request body data (for JSON encoding)
+    /// Note: This will be overridden by EncodableRoute for custom body encoding
     var bodyData: Data? {
         guard let params = parameters, !params.isEmpty else { return nil }
-        
+
         switch parameterEncoding {
         case .json:
             // JSONSerialization works well for [String: String]
             return try? JSONSerialization.data(withJSONObject: params, options: [])
-        
+
         case .formUrlEncoded:
             // Create form-urlencoded string: key1=value1&key2=value2
             let formString = params.map { key, value in
@@ -72,7 +73,7 @@ public extension Route {
                 return "\(encodedKey)=\(encodedValue)"
             }.joined(separator: "&")
             return formString.data(using: .utf8)
-        
+
         case .query, .none:
             return nil
         }
@@ -92,8 +93,9 @@ public extension Route {
                 request.httpMethod = method.stringValue
                 request.timeoutInterval = config.timeout
 
-                // Set body if needed
-                if let body = bodyData {
+                // Set body if needed (allow route to use config encoder)
+                let body = self.bodyData(using: config.jsonEncoder)
+                if let body = body {
                     request.httpBody = body
                     if body.isEmpty { return .failure(.bodyEncodingFailed) }
                 }
@@ -111,6 +113,12 @@ public extension Route {
                 return .success(request)
             }
     }
+
+    /// Get body data using a specific encoder (for routes that need encoding)
+    /// Default implementation uses bodyData property for backward compatibility
+    func bodyData(using encoder: JSONEncoder) -> Data? {
+        bodyData
+    }
     // MARK: - Helpers
 
     /// Properly joins baseURL with endpoint and adds query items (preserving existing ones).
@@ -118,7 +126,14 @@ public extension Route {
         var comps = URLComponents(url: base, resolvingAgainstBaseURL: false)
 
         let basePath = (comps?.path ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let endpointPath = endpoint.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let endpointPath: String
+        switch sanitizeEndpoint(endpoint) {
+        case .success(let sanitized):
+            endpointPath = sanitized
+        case .failure(let error):
+            return .failure(error)
+        }
+
         let joinedPath = [basePath, endpointPath].filter { !$0.isEmpty }.joined(separator: "/")
         comps?.path = "/" + joinedPath
 
@@ -129,15 +144,30 @@ public extension Route {
         return .success(url)
     }
 
-    /// Merge without duplicates by parameter name: new items override old ones.
+    private func sanitizeEndpoint(_ endpoint: String) -> Result<String, NetworkError> {
+        let trimmed = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.contains("://") || trimmed.hasPrefix("//") {
+            return .failure(.invalidURL)
+        }
+
+        let normalized = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if normalized.range(of: #"(^|/)(\.{1,2})(/|$)"#, options: .regularExpression) != nil {
+            return .failure(.invalidURL)
+        }
+
+        if normalized.contains("\\") {
+            return .failure(.invalidURL)
+        }
+
+        return .success(normalized)
+    }
+
+    /// Merge query parameters preserving order and duplicates.
     private func mergeQueryItems(_ a: [URLQueryItem]?, _ b: [URLQueryItem]?) -> [URLQueryItem]? {
         let left = a ?? []
         let right = b ?? []
-        if left.isEmpty && right.isEmpty { return nil }
-        var dict: [String: URLQueryItem] = [:]
-        for item in left { dict[item.name] = item }
-        for item in right { dict[item.name] = item } // right items have priority
-        return Array(dict.values).sorted { $0.name < $1.name }
+        let combined = left + right
+        return combined.isEmpty ? nil : combined
     }
 }
 

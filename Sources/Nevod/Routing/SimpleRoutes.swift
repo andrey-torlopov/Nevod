@@ -5,7 +5,7 @@ import FoundationNetworking
 
 // MARK: - Simple GET Route
 
-/// A simple GET route without parameters.
+/// A simple GET route with optional query parameters.
 /// Use this for basic GET requests to reduce boilerplate.
 ///
 /// Example:
@@ -14,6 +14,13 @@ import FoundationNetworking
 ///     endpoint: "/users/me",
 ///     domain: .api
 /// )
+///
+/// // With query parameters
+/// let route = SimpleGetRoute<[User], MyDomain>(
+///     endpoint: "/users",
+///     domain: .api,
+///     queryParameters: ["page": "1", "limit": "10"]
+/// )
 /// ```
 public struct SimpleGetRoute<R: Decodable, D: ServiceDomain>: Route {
     public typealias Response = R
@@ -21,16 +28,21 @@ public struct SimpleGetRoute<R: Decodable, D: ServiceDomain>: Route {
 
     public let domain: D
     public let endpoint: String
+    public let queryParameters: [String: String]?
+
     public var method: HTTPMethod { .get }
-    public var parameters: [String: String]? { nil }
+    public var parameters: [String: String]? { queryParameters }
+    public var parameterEncoding: ParameterEncoding { .query }
 
     /// Creates a simple GET route
     /// - Parameters:
     ///   - endpoint: The endpoint path (e.g., "/users/me")
     ///   - domain: The service domain
-    public init(endpoint: String, domain: D) {
+    ///   - queryParameters: Optional query parameters (e.g., ["page": "1", "limit": "10"])
+    public init(endpoint: String, domain: D, queryParameters: [String: String]? = nil) {
         self.endpoint = endpoint
         self.domain = domain
+        self.queryParameters = queryParameters
     }
 }
 
@@ -44,7 +56,15 @@ public struct SimpleGetRoute<R: Decodable, D: ServiceDomain>: Route {
 /// let route = SimplePostRoute<User, MyDomain>(
 ///     endpoint: "/users",
 ///     domain: .api,
-///     parameters: ["name": "John", "email": "john@test.com"]
+///     bodyParameters: ["name": "John", "email": "john@test.com"]
+/// )
+///
+/// // With query parameters
+/// let route = SimplePostRoute<User, MyDomain>(
+///     endpoint: "/users",
+///     domain: .api,
+///     queryParameters: ["notify": "true"],
+///     bodyParameters: ["name": "John", "email": "john@test.com"]
 /// )
 /// ```
 public struct SimplePostRoute<R: Decodable, D: ServiceDomain>: Route {
@@ -53,18 +73,48 @@ public struct SimplePostRoute<R: Decodable, D: ServiceDomain>: Route {
 
     public let domain: D
     public let endpoint: String
+    public let queryParameters: [String: String]?
+    public let bodyParameters: [String: String]?
+
     public var method: HTTPMethod { .post }
-    public let parameters: [String: String]?
+    public var parameters: [String: String]? { bodyParameters }
+    public var parameterEncoding: ParameterEncoding { .json }
+
+    // Override urlQueryItems to include query parameters
+    public var urlQueryItems: [URLQueryItem]? {
+        guard let queryParams = queryParameters, !queryParams.isEmpty else { return nil }
+        return queryParams.map { URLQueryItem(name: $0.key, value: $0.value) }
+    }
 
     /// Creates a simple POST route
     /// - Parameters:
     ///   - endpoint: The endpoint path (e.g., "/users")
     ///   - domain: The service domain
-    ///   - parameters: Optional dictionary of parameters to send in the request body
-    public init(endpoint: String, domain: D, parameters: [String: String]? = nil) {
+    ///   - queryParameters: Optional query parameters for the URL
+    ///   - bodyParameters: Optional dictionary of parameters to send in the request body
+    public init(
+        endpoint: String,
+        domain: D,
+        queryParameters: [String: String]? = nil,
+        bodyParameters: [String: String]? = nil
+    ) {
         self.endpoint = endpoint
         self.domain = domain
-        self.parameters = parameters
+        self.queryParameters = queryParameters
+        self.bodyParameters = bodyParameters
+    }
+
+    /// Creates a simple POST route (backward compatibility)
+    /// - Parameters:
+    ///   - endpoint: The endpoint path (e.g., "/users")
+    ///   - domain: The service domain
+    ///   - parameters: Optional dictionary of parameters to send in the request body
+    @available(*, deprecated, message: "Use init with bodyParameters instead")
+    public init(endpoint: String, domain: D, parameters: [String: String]?) {
+        self.endpoint = endpoint
+        self.domain = domain
+        self.queryParameters = nil
+        self.bodyParameters = parameters
     }
 }
 
@@ -78,7 +128,15 @@ public struct SimplePostRoute<R: Decodable, D: ServiceDomain>: Route {
 /// let route = SimplePutRoute<User, MyDomain>(
 ///     endpoint: "/users/123",
 ///     domain: .api,
-///     parameters: ["name": "John Updated"]
+///     bodyParameters: ["name": "John Updated"]
+/// )
+///
+/// // With query parameters
+/// let route = SimplePutRoute<User, MyDomain>(
+///     endpoint: "/users/123",
+///     domain: .api,
+///     queryParameters: ["notify": "true"],
+///     bodyParameters: ["name": "John Updated"]
 /// )
 /// ```
 public struct SimplePutRoute<R: Decodable, D: ServiceDomain>: Route {
@@ -87,18 +145,48 @@ public struct SimplePutRoute<R: Decodable, D: ServiceDomain>: Route {
 
     public let domain: D
     public let endpoint: String
+    public let queryParameters: [String: String]?
+    public let bodyParameters: [String: String]?
+
     public var method: HTTPMethod { .put }
-    public let parameters: [String: String]?
+    public var parameters: [String: String]? { bodyParameters }
+    public var parameterEncoding: ParameterEncoding { .json }
+
+    // Override urlQueryItems to include query parameters
+    public var urlQueryItems: [URLQueryItem]? {
+        guard let queryParams = queryParameters, !queryParams.isEmpty else { return nil }
+        return queryParams.map { URLQueryItem(name: $0.key, value: $0.value) }
+    }
 
     /// Creates a simple PUT route
     /// - Parameters:
     ///   - endpoint: The endpoint path (e.g., "/users/123")
     ///   - domain: The service domain
-    ///   - parameters: Optional dictionary of parameters to send in the request body
-    public init(endpoint: String, domain: D, parameters: [String: String]? = nil) {
+    ///   - queryParameters: Optional query parameters for the URL
+    ///   - bodyParameters: Optional dictionary of parameters to send in the request body
+    public init(
+        endpoint: String,
+        domain: D,
+        queryParameters: [String: String]? = nil,
+        bodyParameters: [String: String]? = nil
+    ) {
         self.endpoint = endpoint
         self.domain = domain
-        self.parameters = parameters
+        self.queryParameters = queryParameters
+        self.bodyParameters = bodyParameters
+    }
+
+    /// Creates a simple PUT route (backward compatibility)
+    /// - Parameters:
+    ///   - endpoint: The endpoint path (e.g., "/users/123")
+    ///   - domain: The service domain
+    ///   - parameters: Optional dictionary of parameters to send in the request body
+    @available(*, deprecated, message: "Use init with bodyParameters instead")
+    public init(endpoint: String, domain: D, parameters: [String: String]?) {
+        self.endpoint = endpoint
+        self.domain = domain
+        self.queryParameters = nil
+        self.bodyParameters = parameters
     }
 }
 

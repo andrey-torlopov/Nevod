@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <b>Modern, lightweight and flexible networking layer for Swift with interceptor pattern support.</b>
+  <b>Modern, lightweight and flexible networking layer for Swift</b>
 </p>
 
 <p align="center">
@@ -27,197 +27,92 @@
 
 ## Overview
 
-Nevod is a Swift networking library designed with simplicity and flexibility in mind. It provides a clean API for basic requests while offering powerful features like interceptors, multiple service domains, and automatic token refresh for advanced use cases.
-
-Built on modern Swift concurrency (async/await) and actor-based architecture for thread-safety.
+Nevod is a Swift networking library designed with simplicity and flexibility in mind. Built on modern Swift concurrency (async/await) and actor-based architecture for thread-safety.
 
 ## Key Features
 
 - **Simple API** - Minimal boilerplate for basic requests
-- **Interceptor Pattern** - Flexible middleware system for request adaptation and retry logic
+- **Interceptor Pattern** - Flexible middleware for request adaptation and retry logic
+- **Multiple Authentication Methods** - Bearer tokens, Cookies, API keys (header & query)
+- **Generic Token System** - Type-safe authentication with any token type
+- **Auto Token Refresh** - Built-in OAuth support with custom refresh strategies
 - **Multiple Services** - Easy management of different API endpoints
-- **Generic Token System** - Flexible authentication with any token type
-- **OAuth Support** - Built-in automatic token refresh handling with custom strategies
 - **Type-Safe** - Protocol-oriented design with full type safety
 - **Modern Swift** - async/await and actor-based concurrency
-- **Testable** - Dependency injection friendly architecture
-- **Logging** - Integrated support for request/response logging via OSLog and Letopis
+- **Logging** - Integrated request/response logging via OSLog
 
-## Quick Example
+## Quick Start
 
 ```swift
-// Define your service domain
+import Nevod
+
+// 1. Define service domain
 enum MyDomain: ServiceDomain {
     case api
     var identifier: String { "api" }
 }
 
-// Create a simple GET request
+// 2. Configure
+let config = NetworkConfig(
+    environments: [
+        MyDomain.api: SimpleEnvironment(
+            baseURL: URL(string: "https://api.example.com")!
+        )
+    ]
+)
+
+// 3. Create provider
+let provider = NetworkProvider(config: config)
+
+// 4. Make request
 let route = SimpleGetRoute<User, MyDomain>(
     endpoint: "/users/me",
     domain: .api
 )
 
-// Execute request
 let user = try await provider.perform(route)
 ```
 
 ## Installation
 
-See [Installation Guide](./Docs/Installation.md) for detailed setup instructions.
-
 **Swift Package Manager:**
 
 ```swift
 dependencies: [
-    .package(url: "git@github.com:andrey-torlopov/Nevod.git", from: "0.0.2")
+    .package(url: "https://github.com/andrey-torlopov/Nevod.git", from: "0.0.4")
 ]
 ```
 
+See [Installation Guide](./Docs/en/Installation.md) for details.
+
 ## Documentation
 
-- [Quick Start Guide](./Docs/QuickStart.md) - Get started in minutes
-- [Installation](./Docs/Installation.md) - Detailed installation and dependencies
-- [API Reference](./Docs/API.md) - Complete API documentation
+- **[Quick Start Guide](./Docs/en/QuickStart.md)** - Get started in minutes
+- **[Authentication Guide](./Docs/en/Authentication.md)** - Bearer, Cookie, API Key auth
+- **[Installation](./Docs/en/Installation.md)** - Setup and dependencies
 
-## Core Components
+## Authentication Example
 
-### Routes
-Define your API endpoints with type-safe routes:
-- `Route` protocol for custom endpoints
-- `SimpleGetRoute`, `SimplePostRoute`, `SimplePutRoute`, `SimpleDeleteRoute` for common cases
-
-### Interceptors
-Modify requests and handle retries:
-- `AuthenticationInterceptor<Token>` - Generic token management with custom refresh strategies
-- `LoggingInterceptor` - HTTP request/response logging
-- `HeadersInterceptor` - Add custom headers
-- `InterceptorChain` - Combine multiple interceptors
-
-### Token System
-Flexible authentication with any token type:
-- `TokenModel` protocol - Define your own token types
-- `TokenStorage<Token>` - Generic token storage
-- Built-in `Token` - Simple Bearer token implementation
-
-### Network Provider
-Actor-based network executor with automatic retries and error handling.
-
-## Usage Patterns
-
-### Basic Request
 ```swift
-let route = SimpleGetRoute<User, MyDomain>(endpoint: "/users/me", domain: .api)
-let user = try await provider.perform(route)
-```
-
-### With Simple Bearer Token
-```swift
-// Create token storage
-let storage = TokenStorage<Token>(storage: myKeyValueStorage)
-
-// Create authentication interceptor
+// Bearer Token
+let storage = TokenStorage<Token>(storage: keychain)
 let authInterceptor = AuthenticationInterceptor(
     tokenStorage: storage,
     refreshStrategy: { oldToken in
-        // Your refresh logic here
-        let newTokenValue = try await authService.refreshToken(oldToken?.value)
-        return Token(value: newTokenValue)
+        let newToken = try await refreshToken(oldToken?.value)
+        return Token(value: newToken)
     }
 )
 
 let provider = NetworkProvider(config: config, interceptor: authInterceptor)
 ```
 
-### With Custom Token Type (OAuth)
-```swift
-// Define your custom token
-struct OAuthToken: TokenModel, Codable {
-    let accessToken: String
-    let refreshToken: String
-    let expiresAt: Date
+## Built-in Token Types
 
-    func authorize(_ request: inout URLRequest) {
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-    }
-
-    func encode() throws -> Data {
-        try JSONEncoder().encode(self)
-    }
-
-    static func decode(from data: Data) throws -> Self {
-        try JSONDecoder().decode(Self.self, from: data)
-    }
-}
-
-// Use with storage and interceptor
-let storage = TokenStorage<OAuthToken>(storage: myStorage)
-let authInterceptor = AuthenticationInterceptor(
-    tokenStorage: storage,
-    refreshStrategy: { oldToken in
-        guard let oldToken = oldToken else { throw NetworkError.unauthorized }
-
-        // Call refresh endpoint
-        let response: OAuthResponse = try await baseClient.request(
-            .post,
-            path: "/oauth/refresh",
-            body: ["refresh_token": oldToken.refreshToken]
-        )
-
-        return OAuthToken(
-            accessToken: response.accessToken,
-            refreshToken: response.refreshToken,
-            expiresAt: Date().addingTimeInterval(response.expiresIn)
-        )
-    }
-)
-```
-
-### Multiple Domains with Different Authentication
-```swift
-// OAuth for api.example.com
-let oauthStorage = TokenStorage<OAuthToken>(storage: keychainStorage)
-let oauthInterceptor = AuthenticationInterceptor(
-    tokenStorage: oauthStorage,
-    refreshStrategy: { /* OAuth refresh */ },
-    shouldAuthenticate: { $0.url?.host == "api.example.com" }
-)
-
-// API Key for admin.example.com
-let apiKeyStorage = TokenStorage<APIKeyToken>(storage: userDefaults)
-let apiKeyInterceptor = AuthenticationInterceptor(
-    tokenStorage: apiKeyStorage,
-    refreshStrategy: { /* API key refresh */ },
-    shouldAuthenticate: { $0.url?.host == "admin.example.com" }
-)
-
-// Combine both
-let provider = NetworkProvider(
-    config: config,
-    interceptor: InterceptorChain([oauthInterceptor, apiKeyInterceptor])
-)
-```
-
-### Multiple Interceptors
-```swift
-let provider = NetworkProvider(
-    config: config,
-    interceptor: InterceptorChain([
-        LoggingInterceptor(logger: logger, logLevel: .verbose),
-        HeadersInterceptor(headers: ["User-Agent": "MyApp/1.0"]),
-        AuthenticationInterceptor(tokenStorage: storage, refreshStrategy: refreshBlock)
-    ])
-)
-```
-
-## Architecture Benefits
-
-✅ **Separation of Concerns** - Token models, storage, and refresh logic are separated
-✅ **Flexibility** - Support any token type through protocols
-✅ **Scalability** - Multiple interceptors for different domains
-✅ **Type-Safety** - Strong typing through generics
-✅ **Testability** - Easy to mock storage and refresh strategies
-✅ **Clean Architecture** - External code configures behavior
+- `Token` - Bearer token (Authorization header)
+- `CookieToken` - Session-based authentication
+- `APIKeyToken` - API key in custom header
+- `QueryAPIKeyToken` - API key as URL parameter
 
 ## Requirements
 
@@ -227,7 +122,7 @@ let provider = NetworkProvider(
 
 ## Dependencies
 
-- [Letopis](https://github.com/andrey-torlopov/Letopis) - Structured logging framework
+- [Letopis](https://github.com/andrey-torlopov/Letopis) - Structured logging
 
 ## License
 
