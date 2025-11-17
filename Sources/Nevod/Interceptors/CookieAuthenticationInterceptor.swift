@@ -45,6 +45,9 @@ public actor CookieAuthenticationInterceptor: RequestInterceptor {
 
     /// Ongoing login task (for deduplication)
     private var loginTask: Task<CookieToken, Error>?
+    private let maxRetryAttempts: Int
+    private let retryBackoff: RetryPolicy?
+    private var consecutive401s = 0
 
     /// Creates a cookie authentication interceptor
     /// - Parameters:
@@ -54,11 +57,15 @@ public actor CookieAuthenticationInterceptor: RequestInterceptor {
     public init(
         cookieStorage: TokenStorage<CookieToken>,
         loginStrategy: @escaping @Sendable () async throws -> CookieToken,
-        shouldAuthenticate: @escaping @Sendable (URLRequest) -> Bool = { _ in true }
+        shouldAuthenticate: @escaping @Sendable (URLRequest) -> Bool = { _ in true },
+        maxRetryAttempts: Int = 2,
+        retryBackoff: RetryPolicy? = nil
     ) {
         self.cookieStorage = cookieStorage
         self.loginStrategy = loginStrategy
         self.shouldAuthenticate = shouldAuthenticate
+        self.maxRetryAttempts = max(1, maxRetryAttempts)
+        self.retryBackoff = retryBackoff
     }
 
     // MARK: - RequestInterceptor
@@ -72,8 +79,12 @@ public actor CookieAuthenticationInterceptor: RequestInterceptor {
         var req = request
 
         // Apply cookies if available
-        if let token = await cookieStorage.load() {
-            token.authorize(&req)
+        do {
+            if let token = try await cookieStorage.load() {
+                token.authorize(&req)
+            }
+        } catch {
+            throw NetworkError.authenticationFailed
         }
 
         return req
@@ -86,15 +97,41 @@ public actor CookieAuthenticationInterceptor: RequestInterceptor {
         error: NetworkError
     ) async throws -> Bool {
         // Only handle 401 errors for requests we authenticate
-        guard shouldAuthenticate(request),
-              case .unauthorized = error else {
+        guard shouldAuthenticate(request) else {
+            consecutive401s = 0
             return false
+        }
+
+        guard case .unauthorized = error else {
+            consecutive401s = 0
+            return false
+        }
+
+        guard consecutive401s < maxRetryAttempts else {
+            return false
+        }
+
+        let attemptIndex = consecutive401s
+        consecutive401s += 1
+
+        if let retryBackoff {
+            do {
+                try await retryBackoff.performDelay(for: attemptIndex)
+            } catch {
+                if error is CancellationError {
+                    throw NetworkError.cancelled
+                }
+                throw NetworkError.unknown(error)
+            }
         }
 
         // Re-authenticate and retry
         do {
             _ = try await loginIfNeeded()
+            consecutive401s = 0
             return true
+        } catch let networkError as NetworkError {
+            throw networkError
         } catch {
             throw NetworkError.unauthorized(data: nil, response: response)
         }
@@ -110,13 +147,15 @@ public actor CookieAuthenticationInterceptor: RequestInterceptor {
         }
 
         let task = Task { () async throws -> CookieToken in
-            // Call login strategy to get fresh cookies
-            let newToken = try await loginStrategy()
-
-            // Save new cookies
-            await cookieStorage.save(newToken)
-
-            return newToken
+            do {
+                let newToken = try await loginStrategy()
+                try await cookieStorage.save(newToken)
+                return newToken
+            } catch let networkError as NetworkError {
+                throw networkError
+            } catch is TokenStorageError {
+                throw NetworkError.authenticationFailed
+            }
         }
 
         self.loginTask = task

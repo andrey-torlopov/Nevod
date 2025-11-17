@@ -5,9 +5,11 @@ import FoundationNetworking
 
 public enum NetworkError: Error, Equatable {
     case invalidURL
+    case missingEnvironment(domain: String)
     case parsingError(data: Data?, underlyingError: String?)
     case timeout
     case noConnection
+    case cancelled
     case unauthorized(data: Data?, response: HTTPURLResponse?)
     case clientError(code: Int, data: Data?, response: HTTPURLResponse?)
     case serverError(code: Int, data: Data?, response: HTTPURLResponse?)
@@ -19,8 +21,10 @@ public enum NetworkError: Error, Equatable {
     public static func == (lhs: NetworkError, rhs: NetworkError) -> Bool {
         switch (lhs, rhs) {
         case (.invalidURL, .invalidURL),
+            (.missingEnvironment(let lhs), .missingEnvironment(let rhs)) where lhs == rhs,
             (.timeout, .timeout),
             (.noConnection, .noConnection),
+            (.cancelled, .cancelled),
             (.bodyEncodingFailed, .bodyEncodingFailed),
             (.authenticationFailed, .authenticationFailed):
             return true
@@ -185,6 +189,8 @@ extension NetworkError: CustomStringConvertible {
         switch self {
         case .invalidURL:
             return "Invalid URL"
+        case .missingEnvironment(let domain):
+            return "Missing environment for domain: \(domain)"
         case .parsingError(let data, let error):
             var desc = "Parsing error"
             if let error = error {
@@ -198,6 +204,8 @@ extension NetworkError: CustomStringConvertible {
             return "Request timed out"
         case .noConnection:
             return "No internet connection"
+        case .cancelled:
+            return "Request was cancelled"
         case .unauthorized(let data, let response):
             var desc = "Unauthorized (401)"
             if let response = response {

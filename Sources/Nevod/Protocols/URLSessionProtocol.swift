@@ -25,6 +25,26 @@ extension URLSessionType: URLSessionProtocol {
         delegate: URLSessionTaskDelegate?
     ) async throws -> (Data, URLResponse) {
         #if canImport(FoundationNetworking)
+        if let delegate = delegate {
+            return try await withCheckedThrowingContinuation { continuation in
+                let session = URLSession(
+                    configuration: self.configuration,
+                    delegate: delegate,
+                    delegateQueue: nil
+                )
+                let task = session.dataTask(with: request) { data, response, error in
+                    session.finishTasksAndInvalidate()
+                    if let error = error {
+                        continuation.resume(throwing: error)
+                    } else if let data = data, let response = response {
+                        continuation.resume(returning: (data, response))
+                    } else {
+                        continuation.resume(throwing: URLError(.badServerResponse))
+                    }
+                }
+                task.resume()
+            }
+        }
         return try await withCheckedThrowingContinuation { continuation in
             let task = self.dataTask(with: request) { data, response, error in
                 if let error = error {

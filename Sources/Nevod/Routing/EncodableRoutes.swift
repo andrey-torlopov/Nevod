@@ -29,11 +29,16 @@ public struct EncodablePostRoute<Body: Encodable, Response: Decodable, Domain: S
 
     public let domain: Domain
     public let endpoint: String
+    public let queryParameters: [String: String]?
     public let body: Body?
     public let bodyEncoder: JSONEncoder
     public var headers: [String: String]?
 
     public var method: HTTPMethod { .post }
+    public var urlQueryItems: [URLQueryItem]? {
+        guard let queryParameters, !queryParameters.isEmpty else { return nil }
+        return queryParameters.map { URLQueryItem(name: $0.key, value: $0.value) }
+    }
 
     /// Creates an encodable POST route
     /// - Parameters:
@@ -45,12 +50,14 @@ public struct EncodablePostRoute<Body: Encodable, Response: Decodable, Domain: S
     public init(
         endpoint: String,
         domain: Domain,
+        queryParameters: [String: String]? = nil,
         body: Body? = nil,
         encoder: JSONEncoder = JSONEncoder(),
         headers: [String: String]? = nil
     ) {
         self.endpoint = endpoint
         self.domain = domain
+        self.queryParameters = queryParameters
         self.body = body
         self.bodyEncoder = encoder
         self.headers = headers
@@ -82,11 +89,16 @@ public struct EncodablePutRoute<Body: Encodable, Response: Decodable, Domain: Se
 
     public let domain: Domain
     public let endpoint: String
+    public let queryParameters: [String: String]?
     public let body: Body?
     public let bodyEncoder: JSONEncoder
     public var headers: [String: String]?
 
     public var method: HTTPMethod { .put }
+    public var urlQueryItems: [URLQueryItem]? {
+        guard let queryParameters, !queryParameters.isEmpty else { return nil }
+        return queryParameters.map { URLQueryItem(name: $0.key, value: $0.value) }
+    }
 
     /// Creates an encodable PUT route
     /// - Parameters:
@@ -98,12 +110,14 @@ public struct EncodablePutRoute<Body: Encodable, Response: Decodable, Domain: Se
     public init(
         endpoint: String,
         domain: Domain,
+        queryParameters: [String: String]? = nil,
         body: Body? = nil,
         encoder: JSONEncoder = JSONEncoder(),
         headers: [String: String]? = nil
     ) {
         self.endpoint = endpoint
         self.domain = domain
+        self.queryParameters = queryParameters
         self.body = body
         self.bodyEncoder = encoder
         self.headers = headers
@@ -135,11 +149,16 @@ public struct EncodablePatchRoute<Body: Encodable, Response: Decodable, Domain: 
 
     public let domain: Domain
     public let endpoint: String
+    public let queryParameters: [String: String]?
     public let body: Body?
     public let bodyEncoder: JSONEncoder
     public var headers: [String: String]?
 
     public var method: HTTPMethod { .patch }
+    public var urlQueryItems: [URLQueryItem]? {
+        guard let queryParameters, !queryParameters.isEmpty else { return nil }
+        return queryParameters.map { URLQueryItem(name: $0.key, value: $0.value) }
+    }
 
     /// Creates an encodable PATCH route
     /// - Parameters:
@@ -151,12 +170,14 @@ public struct EncodablePatchRoute<Body: Encodable, Response: Decodable, Domain: 
     public init(
         endpoint: String,
         domain: Domain,
+        queryParameters: [String: String]? = nil,
         body: Body? = nil,
         encoder: JSONEncoder = JSONEncoder(),
         headers: [String: String]? = nil
     ) {
         self.endpoint = endpoint
         self.domain = domain
+        self.queryParameters = queryParameters
         self.body = body
         self.bodyEncoder = encoder
         self.headers = headers

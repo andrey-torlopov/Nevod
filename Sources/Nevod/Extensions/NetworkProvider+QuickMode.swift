@@ -2,6 +2,7 @@ import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
+import Letopis
 
 // MARK: - Default Domain for Quick Mode
 
@@ -33,15 +34,31 @@ public extension NetworkProvider {
         baseURL: URL,
         timeout: TimeInterval = 30,
         retries: Int = 3,
-        retryPolicy: RetryPolicy? = nil
+        rateLimit: RateLimitConfiguration? = nil,
+        retryPolicy: RetryPolicy? = nil,
+        jsonEncoder: JSONEncoder = JSONEncoder(),
+        jsonDecoder: JSONDecoder = JSONDecoder(),
+        session: URLSessionProtocol = URLSessionType.shared,
+        interceptor: (any RequestInterceptor)? = nil,
+        rateLimiter: (any RateLimiting)? = nil,
+        logger: Letopis? = Letopis(interceptors: [ConsoleInterceptor()])
     ) -> NetworkProvider {
         let config = NetworkConfig(
             environments: [DefaultDomain.default: SimpleEnvironment(baseURL: baseURL)],
             timeout: timeout,
             retries: retries,
+            rateLimit: rateLimit,
+            jsonEncoder: jsonEncoder,
+            jsonDecoder: jsonDecoder,
             retryPolicy: retryPolicy
         )
-        return NetworkProvider(config: config)
+        return NetworkProvider(
+            config: config,
+            session: session,
+            interceptor: interceptor,
+            rateLimiter: rateLimiter,
+            logger: logger
+        )
     }
 
     /// Performs a simple GET request
@@ -114,25 +131,12 @@ public extension NetworkProvider {
         query: [String: String]? = nil,
         body: Body
     ) async throws -> Response {
-        var route = EncodablePostRoute<Body, Response, DefaultDomain>(
+        let route = EncodablePostRoute<Body, Response, DefaultDomain>(
             endpoint: endpoint,
             domain: .default,
+            queryParameters: query,
             body: body
         )
-
-        // Add query parameters if provided
-        if let query = query {
-            // We need to create a custom route that supports both encodable body and query params
-            // For now, append query to endpoint
-            let queryString = query.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
-            let endpointWithQuery = endpoint.contains("?") ? "\(endpoint)&\(queryString)" : "\(endpoint)?\(queryString)"
-
-            route = EncodablePostRoute<Body, Response, DefaultDomain>(
-                endpoint: endpointWithQuery,
-                domain: .default,
-                body: body
-            )
-        }
 
         return try await perform(route)
     }
@@ -173,22 +177,12 @@ public extension NetworkProvider {
         query: [String: String]? = nil,
         body: Body
     ) async throws -> Response {
-        var route = EncodablePutRoute<Body, Response, DefaultDomain>(
+        let route = EncodablePutRoute<Body, Response, DefaultDomain>(
             endpoint: endpoint,
             domain: .default,
+            queryParameters: query,
             body: body
         )
-
-        if let query = query {
-            let queryString = query.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
-            let endpointWithQuery = endpoint.contains("?") ? "\(endpoint)&\(queryString)" : "\(endpoint)?\(queryString)"
-
-            route = EncodablePutRoute<Body, Response, DefaultDomain>(
-                endpoint: endpointWithQuery,
-                domain: .default,
-                body: body
-            )
-        }
 
         return try await perform(route)
     }
@@ -204,22 +198,12 @@ public extension NetworkProvider {
         query: [String: String]? = nil,
         body: Body
     ) async throws -> Response {
-        var route = EncodablePatchRoute<Body, Response, DefaultDomain>(
+        let route = EncodablePatchRoute<Body, Response, DefaultDomain>(
             endpoint: endpoint,
             domain: .default,
+            queryParameters: query,
             body: body
         )
-
-        if let query = query {
-            let queryString = query.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
-            let endpointWithQuery = endpoint.contains("?") ? "\(endpoint)&\(queryString)" : "\(endpoint)?\(queryString)"
-
-            route = EncodablePatchRoute<Body, Response, DefaultDomain>(
-                endpoint: endpointWithQuery,
-                domain: .default,
-                body: body
-            )
-        }
 
         return try await perform(route)
     }

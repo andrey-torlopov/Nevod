@@ -162,15 +162,12 @@ public extension Route {
         return .success(normalized)
     }
 
-    /// Merge without duplicates by parameter name: new items override old ones.
+    /// Merge query parameters preserving order and duplicates.
     private func mergeQueryItems(_ a: [URLQueryItem]?, _ b: [URLQueryItem]?) -> [URLQueryItem]? {
         let left = a ?? []
         let right = b ?? []
-        if left.isEmpty && right.isEmpty { return nil }
-        var dict: [String: URLQueryItem] = [:]
-        for item in left { dict[item.name] = item }
-        for item in right { dict[item.name] = item } // right items have priority
-        return Array(dict.values).sorted { $0.name < $1.name }
+        let combined = left + right
+        return combined.isEmpty ? nil : combined
     }
 }
 

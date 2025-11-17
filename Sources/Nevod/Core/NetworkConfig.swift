@@ -74,7 +74,7 @@ public struct NetworkConfig {
         for domain: Domain
     ) -> Result<any NetworkEnvironmentProviding, NetworkError> {
         guard let env = environments[AnyHashable(domain)] else {
-            return .failure(.invalidURL)
+            return .failure(.missingEnvironment(domain: domain.identifier))
         }
         return .success(env)
     }

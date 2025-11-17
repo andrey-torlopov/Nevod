@@ -103,7 +103,8 @@ struct NevodTests {
     private actor MockRateLimiter: RateLimiting {
         private(set) var callCount = 0
 
-        func acquirePermit() async {
+        func acquirePermit() async throws {
+            try Task.checkCancellation()
             callCount += 1
         }
 
@@ -165,7 +166,7 @@ struct NevodTests {
     @Test func tokenRefreshAndRetry() async {
         let mockStorage = MockStorage()
         let storage = TokenStorage<Token>(storage: mockStorage)
-        await storage.save(Token(value: "expired"))
+        try await storage.save(Token(value: "expired"))
 
         var callCount = 0
         let authInterceptor = AuthenticationInterceptor(
@@ -192,7 +193,7 @@ struct NevodTests {
 
         let result: Result<TestModel, NetworkError> = await provider.request(TestRoute())
         #expect(callCount == 2)
-        let token = await storage.load()
+        let token = try await storage.load()
         #expect(token?.value == "refreshed")
         switch result {
         case .success(let model):
@@ -268,7 +269,7 @@ struct NevodTests {
     @Test func interceptorChain() async {
         let mockStorage = MockStorage()
         let storage = TokenStorage<Token>(storage: mockStorage)
-        await storage.save(Token(value: "mytoken"))
+        try await storage.save(Token(value: "mytoken"))
 
         let chain = InterceptorChain([
             HeadersInterceptor(headers: ["User-Agent": "TestApp/1.0"]),
