@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-[Русская версия](../ru/QuickStart.md)
+[Русская версия](../ru/QuickStart-ru.md)
 
 Get started with Nevod in minutes. This guide covers the essential steps to integrate Nevod into your project.
 
@@ -10,7 +10,7 @@ Add Nevod to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "git@github.com:andrey-torlopov/Nevod.git", from: "0.0.2")
+    .package(url: "git@github.com:andrey-torlopov/Nevod.git", from: "0.0.5")
 ]
 ```
 

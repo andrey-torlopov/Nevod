@@ -1,6 +1,6 @@
 # Installation Guide
 
-[Русская версия](../ru/Installation.md)
+[Русская версия](../ru/Installation-ru.md)
 
 This guide covers installing Nevod and its dependencies in your project.
 
@@ -39,7 +39,7 @@ let package = Package(
         .macOS(.v15)
     ],
     dependencies: [
-        .package(url: "git@github.com:andrey-torlopov/Nevod.git", from: "0.0.2")
+        .package(url: "git@github.com:andrey-torlopov/Nevod.git", from: "0.0.5")
     ],
     targets: [
         .target(
@@ -96,7 +96,7 @@ let user = try await provider.perform(route)
 
 - [Quick Start Guide](./QuickStart.md) - Learn the basics
 - [Authentication Guide](./Authentication.md) - Setup token-based auth
-- [Advanced Usage](./Advanced.md) - Interceptors, multiple services, custom routes
+- [Advanced Usage](./AdvancedFeatures.md) - Interceptors, multiple services, custom routes
 
 ## Troubleshooting
 

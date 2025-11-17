@@ -10,7 +10,7 @@
 
 ```swift
 dependencies: [
-    .package(url: "git@github.com:andrey-torlopov/Nevod.git", from: "0.0.2")
+    .package(url: "git@github.com:andrey-torlopov/Nevod.git", from: "0.0.5")
 ]
 ```
 
