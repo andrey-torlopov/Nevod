@@ -1,6 +1,6 @@
 # Authentication Guide
 
-[Русская версия](../ru/Authentication.md)
+[Русская версия](../ru/Authentication-ru.md)
 
 Nevod provides a flexible, generic token system that supports multiple authentication methods out of the box.
 
@@ -418,4 +418,4 @@ class AuthService {
 ## See Also
 
 - [Quick Start Guide](./QuickStart.md)
-- [Advanced Usage](./Advanced.md)
+- [Advanced Usage](./AdvancedFeatures.md)

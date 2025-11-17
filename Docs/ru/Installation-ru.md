@@ -39,7 +39,7 @@ let package = Package(
         .macOS(.v15)
     ],
     dependencies: [
-        .package(url: "git@github.com:andrey-torlopov/Nevod.git", from: "0.0.2")
+        .package(url: "git@github.com:andrey-torlopov/Nevod.git", from: "0.0.5")
     ],
     targets: [
         .target(
@@ -94,9 +94,9 @@ let user = try await provider.perform(route)
 
 ## Следующие шаги
 
-- [Руководство по быстрому старту](./QuickStart.md) - Изучите основы
-- [Руководство по аутентификации](./Authentication.md) - Настройте авторизацию по токенам
-- [Продвинутое использование](./Advanced.md) - Interceptor'ы, множественные сервисы, кастомные routes
+- [Руководство по быстрому старту](./QuickStart-ru.md) - Изучите основы
+- [Руководство по аутентификации](./Authentication-ru.md) - Настройте авторизацию по токенам
+- [Продвинутое использование](../en/AdvancedFeatures.md) - Interceptor'ы, множественные сервисы, кастомные routes (англ.)
 
 ## Решение проблем
 

@@ -79,17 +79,17 @@ let user = try await provider.perform(route)
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/andrey-torlopov/Nevod.git", from: "0.0.4")
+    .package(url: "https://github.com/andrey-torlopov/Nevod.git", from: "0.0.5")
 ]
 ```
 
-См. [Руководство по установке](./Docs/ru/Installation.md) для деталей.
+См. [Руководство по установке](./Docs/ru/Installation-ru.md) для деталей.
 
 ## Документация
 
-- **[Руководство по быстрому старту](./Docs/ru/QuickStart.md)** - Начните за несколько минут
-- **[Руководство по аутентификации](./Docs/ru/Authentication.md)** - Bearer, Cookie, API Key авторизация
-- **[Установка](./Docs/ru/Installation.md)** - Настройка и зависимости
+- **[Руководство по быстрому старту](./Docs/ru/QuickStart-ru.md)** - Начните за несколько минут
+- **[Руководство по аутентификации](./Docs/ru/Authentication-ru.md)** - Bearer, Cookie, API Key авторизация
+- **[Установка](./Docs/ru/Installation-ru.md)** - Настройка и зависимости
 
 ## Пример аутентификации
 

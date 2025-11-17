@@ -79,7 +79,7 @@ let user = try await provider.perform(route)
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/andrey-torlopov/Nevod.git", from: "0.0.4")
+    .package(url: "https://github.com/andrey-torlopov/Nevod.git", from: "0.0.5")
 ]
 ```
 
