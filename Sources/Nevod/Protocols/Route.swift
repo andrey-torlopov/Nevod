@@ -58,25 +58,7 @@ public extension Route {
     /// Request body data (for JSON encoding)
     /// Note: This will be overridden by EncodableRoute for custom body encoding
     var bodyData: Data? {
-        guard let params = parameters, !params.isEmpty else { return nil }
-
-        switch parameterEncoding {
-        case .json:
-            // JSONSerialization works well for [String: String]
-            return try? JSONSerialization.data(withJSONObject: params, options: [])
-
-        case .formUrlEncoded:
-            // Create form-urlencoded string: key1=value1&key2=value2
-            let formString = params.map { key, value in
-                let encodedKey = key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? key
-                let encodedValue = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
-                return "\(encodedKey)=\(encodedValue)"
-            }.joined(separator: "&")
-            return formString.data(using: .utf8)
-
-        case .query, .none:
-            return nil
-        }
+        try? bodyData(using: JSONEncoder())
     }
 
     // MARK: - Building URLRequest
@@ -94,10 +76,15 @@ public extension Route {
                 request.timeoutInterval = config.timeout
 
                 // Set body if needed (allow route to use config encoder)
-                let body = self.bodyData(using: config.jsonEncoder)
-                if let body = body {
+                let body: Data?
+                do {
+                    body = try self.bodyData(using: config.jsonEncoder)
+                } catch {
+                    return .failure(.bodyEncodingFailed)
+                }
+
+                if let body {
                     request.httpBody = body
-                    if body.isEmpty { return .failure(.bodyEncodingFailed) }
                 }
 
                 // Set Content-Type if needed
@@ -116,8 +103,25 @@ public extension Route {
 
     /// Get body data using a specific encoder (for routes that need encoding)
     /// Default implementation uses bodyData property for backward compatibility
-    func bodyData(using encoder: JSONEncoder) -> Data? {
-        bodyData
+    func bodyData(using encoder: JSONEncoder) throws -> Data? {
+        guard let params = parameters, !params.isEmpty else { return nil }
+
+        switch parameterEncoding {
+        case .json:
+            return try JSONSerialization.data(withJSONObject: params, options: [])
+
+        case .formUrlEncoded:
+            // Create form-urlencoded string: key1=value1&key2=value2
+            let formString = params.map { key, value in
+                let encodedKey = key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? key
+                let encodedValue = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
+                return "\(encodedKey)=\(encodedValue)"
+            }.joined(separator: "&")
+            return formString.data(using: .utf8)
+
+        case .query, .none:
+            return nil
+        }
     }
     // MARK: - Helpers
 

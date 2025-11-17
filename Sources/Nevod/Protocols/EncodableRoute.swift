@@ -44,15 +44,48 @@ public extension EncodableRoute {
     var bodyEncoder: JSONEncoder { JSONEncoder() }
 
     // Override bodyData to encode using the Encodable body
-    var bodyData: Data? {
-        guard let body = body else { return nil }
-        return try? bodyEncoder.encode(body)
-    }
+    var bodyData: Data? { nil }
 
     // Override bodyData(using:) to use the provided encoder from config
-    func bodyData(using encoder: JSONEncoder) -> Data? {
+    func bodyData(using encoder: JSONEncoder) throws -> Data? {
         guard let body = body else { return nil }
-        return try? encoder.encode(body)
+        let encoder = preferredBodyEncoder(fallback: encoder)
+        return try encoder.encode(body)
+    }
+
+    /// Chooses the encoder for the current route.
+    /// If the route provides custom settings, they take precedence over the global config encoder.
+    /// Otherwise the config-provided encoder is reused to keep global defaults (dates, keys, etc.).
+    private func preferredBodyEncoder(fallback: JSONEncoder) -> JSONEncoder {
+        let routeEncoder = bodyEncoder
+
+        // Detect if the route encoder deviates from defaults
+        let hasCustomSettings: Bool = {
+            switch routeEncoder.dateEncodingStrategy {
+            case .deferredToDate: break
+            default: return true
+            }
+
+            switch routeEncoder.dataEncodingStrategy {
+            case .base64: break
+            default: return true
+            }
+
+            switch routeEncoder.nonConformingFloatEncodingStrategy {
+            case .throw: break
+            default: return true
+            }
+
+            switch routeEncoder.keyEncodingStrategy {
+            case .useDefaultKeys: break
+            default: return true
+            }
+
+            if !routeEncoder.outputFormatting.isEmpty { return true }
+            return !routeEncoder.userInfo.isEmpty
+        }()
+
+        return hasCustomSettings ? routeEncoder : fallback
     }
 }
 

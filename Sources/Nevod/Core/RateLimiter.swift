@@ -16,20 +16,47 @@ public protocol RateLimiting: Sendable {
     func acquirePermit() async throws
 }
 
+/// Clock abstraction used by RateLimiter to allow deterministic testing while relying on monotonic time.
+struct RateLimiterClock {
+    let now: @Sendable () -> DispatchTime
+    let sleep: @Sendable (_ nanoseconds: UInt64) async throws -> Void
+
+    static let live = RateLimiterClock(
+        now: { DispatchTime.now() },
+        sleep: { try await Task.sleep(nanoseconds: $0) }
+    )
+}
+
 /// Simple sliding-window based rate limiter that enforces the configuration limits.
 public actor RateLimiter: RateLimiting {
     private let configuration: RateLimitConfiguration
-    private var timestamps: [Date] = []
+    private let clock: RateLimiterClock
+    private let intervalNanoseconds: UInt64
+    private var timestamps: [DispatchTime] = []
     private var headIndex: Int = 0
 
     public init(configuration: RateLimitConfiguration) {
         self.configuration = configuration
+        self.clock = .live
+        self.intervalNanoseconds = max(
+            1,
+            UInt64(configuration.perInterval * 1_000_000_000.0)
+        )
+    }
+
+    init(configuration: RateLimitConfiguration, clock: RateLimiterClock) {
+        self.configuration = configuration
+        self.clock = clock
+        self.intervalNanoseconds = max(
+            1,
+            UInt64(configuration.perInterval * 1_000_000_000.0)
+        )
     }
 
     public func acquirePermit() async throws {
         while true {
             try Task.checkCancellation()
-            let now = Date()
+            let now = clock.now()
             cleanupExpiredTimestamps(now)
 
             if activeCount < configuration.requests {
@@ -42,19 +69,19 @@ public actor RateLimiter: RateLimiting {
             }
 
             let earliest = timestamps[headIndex]
-            let elapsed = now.timeIntervalSince(earliest)
-            let waitTime = configuration.perInterval - elapsed
+            let elapsed = elapsedNanoseconds(since: earliest, now: now)
 
-            if waitTime > 0 {
-                let nanoseconds = UInt64(waitTime * 1_000_000_000)
-                do {
-                    try await Task.sleep(nanoseconds: nanoseconds)
-                } catch {
-                    throw error
-                }
-            } else {
+            if elapsed >= intervalNanoseconds {
                 headIndex += 1
                 compactIfNeeded()
+                continue
+            }
+
+            let waitTime = intervalNanoseconds - elapsed
+            do {
+                try await clock.sleep(waitTime)
+            } catch {
+                throw error
             }
         }
     }
@@ -63,9 +90,9 @@ public actor RateLimiter: RateLimiting {
         timestamps.count - headIndex
     }
 
-    private func cleanupExpiredTimestamps(_ now: Date) {
+    private func cleanupExpiredTimestamps(_ now: DispatchTime) {
         while headIndex < timestamps.count,
-              now.timeIntervalSince(timestamps[headIndex]) >= configuration.perInterval {
+              elapsedNanoseconds(since: timestamps[headIndex], now: now) >= intervalNanoseconds {
             headIndex += 1
         }
         compactIfNeeded()
@@ -75,5 +102,11 @@ public actor RateLimiter: RateLimiting {
         guard headIndex > 0, headIndex * 2 >= timestamps.count else { return }
         timestamps.removeFirst(headIndex)
         headIndex = 0
+    }
+
+    private func elapsedNanoseconds(since instant: DispatchTime, now: DispatchTime) -> UInt64 {
+        let nowValue = now.uptimeNanoseconds
+        let thenValue = instant.uptimeNanoseconds
+        return nowValue >= thenValue ? nowValue - thenValue : 0
     }
 }

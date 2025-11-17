@@ -21,13 +21,15 @@ public enum NetworkError: Error, Equatable {
     public static func == (lhs: NetworkError, rhs: NetworkError) -> Bool {
         switch (lhs, rhs) {
         case (.invalidURL, .invalidURL),
-            (.missingEnvironment(let lhs), .missingEnvironment(let rhs)) where lhs == rhs,
             (.timeout, .timeout),
             (.noConnection, .noConnection),
             (.cancelled, .cancelled),
             (.bodyEncodingFailed, .bodyEncodingFailed),
             (.authenticationFailed, .authenticationFailed):
             return true
+
+        case (.missingEnvironment(let lhsDomain), .missingEnvironment(let rhsDomain)):
+            return lhsDomain == rhsDomain
 
         case (.parsingError(let lData, let lError), .parsingError(let rData, let rError)):
             return lData == rData && lError == rError

@@ -714,7 +714,158 @@ struct NewFeaturesTests {
         }
     }
 
+    // MARK: - URLSession Delegate (Linux)
+
+    @Test func linuxDelegatePathPreservesConfiguration() async throws {
+        #if canImport(FoundationNetworking)
+        final class TrackingProtocol: URLProtocol {
+            private static let lock = NSLock()
+            private(set) static var handledRequests: Int = 0
+
+            override class func canInit(with request: URLRequest) -> Bool { true }
+            override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+            override func startLoading() {
+                TrackingProtocol.lock.lock()
+                TrackingProtocol.handledRequests += 1
+                TrackingProtocol.lock.unlock()
+
+                let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                client?.urlProtocol(self, didLoad: Data("ok".utf8))
+                client?.urlProtocolDidFinishLoading(self)
+            }
+
+            override func stopLoading() {}
+        }
+
+        TrackingProtocol.handledRequests = 0
+
+        let cache = URLCache(memoryCapacity: 1024 * 1024, diskCapacity: 0, diskPath: nil)
+        let cookies = HTTPCookieStorage()
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [TrackingProtocol.self]
+        configuration.urlCache = cache
+        configuration.httpCookieStorage = cookies
+
+        let session = URLSession(configuration: configuration)
+        let config = NetworkConfig(
+            environments: [
+                TestDomain.api: SimpleEnvironment(baseURL: URL(string: "https://example.com")!)
+            ],
+            timeout: 1
+        )
+
+        struct EmptyRoute: Route {
+            typealias Response = Data
+            typealias Domain = TestDomain
+            let domain: TestDomain = .api
+            let endpoint: String = "/delegate-test"
+            let method: HTTPMethod = .get
+            let parameters: [String: String]? = nil
+        }
+
+        let provider = NetworkProvider(config: config, session: session, logger: nil)
+        _ = try await provider.perform(EmptyRoute(), delegate: MockDelegate())
+
+        #expect(TrackingProtocol.handledRequests == 1)
+        #expect(session.configuration.urlCache === cache)
+        #expect(session.configuration.httpCookieStorage === cookies)
+        #else
+        return
+        #endif
+    }
+
     // MARK: - EncodableRoute Edge Cases
+
+    @Test func encodableRouteSurfacesEncodingFailure() async {
+        struct FailingBody: Encodable {
+            func encode(to encoder: Encoder) throws {
+                struct SampleError: Error {}
+                throw SampleError()
+            }
+        }
+
+        let provider = makeProvider { _ in
+            #expect(Bool(false), "Request should not be executed when encoding fails")
+            let response = HTTPURLResponse(url: URL(string: "https://example.com")!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (Data(), response)
+        }
+
+        let route = EncodablePostRoute<FailingBody, Data, TestDomain>(
+            endpoint: "/encoding-error",
+            domain: .api,
+            body: FailingBody()
+        )
+
+        do {
+            _ = try await provider.perform(route)
+            #expect(Bool(false), "Expected bodyEncodingFailed error")
+        } catch let error as NetworkError {
+            #expect(error == .bodyEncodingFailed)
+        } catch {
+            #expect(Bool(false), "Unexpected error \(error)")
+        }
+    }
+
+    @Test func encodableRouteUsesRouteEncoderOverConfig() async throws {
+        struct Payload: Encodable {
+            let createdAt: Date
+        }
+
+        let routeEncoder: JSONEncoder = {
+            let encoder = JSONEncoder()
+            encoder.keyEncodingStrategy = .convertToSnakeCase
+            encoder.dateEncodingStrategy = .iso8601
+            return encoder
+        }()
+
+        let configEncoder: JSONEncoder = {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .millisecondsSince1970
+            return encoder
+        }()
+
+        let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
+        let session = MockSession { request in
+            let object = try JSONSerialization.jsonObject(with: request.httpBody ?? Data(), options: []) as? [String: Any]
+            #expect(object?["created_at"] is String)
+            #expect(object?["createdAt"] == nil)
+
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (Data(), response)
+        }
+
+        let config = NetworkConfig(
+            environments: [
+                TestDomain.api: SimpleEnvironment(
+                    baseURL: URL(string: "https://example.com")!
+                )
+            ],
+            timeout: 1,
+            retries: 1,
+            jsonEncoder: configEncoder,
+            jsonDecoder: JSONDecoder()
+        )
+
+        let provider = NetworkProvider(
+            config: config,
+            session: session,
+            interceptor: nil,
+            rateLimiter: nil,
+            logger: nil
+        )
+
+        let route = EncodablePostRoute<Payload, Data, TestDomain>(
+            endpoint: "/custom-encoder",
+            domain: .api,
+            body: Payload(createdAt: timestamp),
+            encoder: routeEncoder
+        )
+
+        _ = try await provider.perform(route)
+    }
 
     @Test func encodableRouteWithNilBody() async throws {
         let provider = makeProvider { request in

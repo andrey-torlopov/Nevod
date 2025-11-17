@@ -27,11 +27,7 @@ extension URLSessionType: URLSessionProtocol {
         #if canImport(FoundationNetworking)
         if let delegate = delegate {
             return try await withCheckedThrowingContinuation { continuation in
-                let session = URLSession(
-                    configuration: self.configuration,
-                    delegate: delegate,
-                    delegateQueue: nil
-                )
+                let session = makeDelegateSessionPreservingConfiguration(delegate: delegate)
                 let task = session.dataTask(with: request) { data, response, error in
                     session.finishTasksAndInvalidate()
                     if let error = error {
@@ -62,3 +58,30 @@ extension URLSessionType: URLSessionProtocol {
         #endif
     }
 }
+
+#if canImport(FoundationNetworking)
+private extension URLSessionType {
+    func makeDelegateSessionPreservingConfiguration(delegate: URLSessionTaskDelegate) -> URLSession {
+        var configuration = self.configuration
+        configuration.httpCookieStorage = self.configuration.httpCookieStorage
+        configuration.urlCache = self.configuration.urlCache
+        configuration.urlCredentialStorage = self.configuration.urlCredentialStorage
+        configuration.protocolClasses = self.configuration.protocolClasses
+        configuration.requestCachePolicy = self.configuration.requestCachePolicy
+        configuration.timeoutIntervalForRequest = self.configuration.timeoutIntervalForRequest
+        configuration.timeoutIntervalForResource = self.configuration.timeoutIntervalForResource
+        configuration.networkServiceType = self.configuration.networkServiceType
+        configuration.allowsCellularAccess = self.configuration.allowsCellularAccess
+        if #available(macOS 12.0, *) {
+            configuration.allowsExpensiveNetworkAccess = self.configuration.allowsExpensiveNetworkAccess
+            configuration.allowsConstrainedNetworkAccess = self.configuration.allowsConstrainedNetworkAccess
+            configuration.multipathServiceType = self.configuration.multipathServiceType
+        }
+        return URLSession(
+            configuration: configuration,
+            delegate: delegate,
+            delegateQueue: self.delegateQueue
+        )
+    }
+}
+#endif
