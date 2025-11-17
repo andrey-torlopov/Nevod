@@ -483,7 +483,7 @@ struct NevodTests {
             .domain: "example.com",
             .path: "/",
             .secure: true,
-            .httpOnly: true
+            HTTPCookiePropertyKey(rawValue: "HttpOnly"): true
         ]
 
         let cookie = try #require(HTTPCookie(properties: properties))

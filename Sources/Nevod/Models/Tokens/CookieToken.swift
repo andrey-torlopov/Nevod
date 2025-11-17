@@ -84,7 +84,7 @@ private struct CookieCodable: Codable {
         }
 
         if isHTTPOnly {
-            properties[.httpOnly] = true
+            properties[HTTPCookiePropertyKey(rawValue: "HttpOnly")] = true
         }
 
         return HTTPCookie(properties: properties)

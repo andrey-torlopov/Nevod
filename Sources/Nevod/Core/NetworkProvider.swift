@@ -50,6 +50,7 @@ public actor NetworkProvider {
         delegate: URLSessionTaskDelegate? = nil
     ) async -> Result<R.Response, NetworkError> {
         let attempts = max(1, config.retries)
+        let currentSession = session
 
         logger?.debug("Starting request to \(route.endpoint)", payload: [
             "endpoint": route.endpoint,
@@ -99,7 +100,7 @@ public actor NetworkProvider {
 
                 // Execute request
                 do {
-                    let (data, response) = try await session.requestData(
+                    let (data, response) = try await currentSession.requestData(
                         for: adaptedRequest,
                         delegate: delegate
                     )

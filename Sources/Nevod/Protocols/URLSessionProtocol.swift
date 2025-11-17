@@ -6,7 +6,7 @@ public typealias URLSessionType = FoundationNetworking.URLSession
 public typealias URLSessionType = Foundation.URLSession
 #endif
 
-public protocol URLSessionProtocol {
+public protocol URLSessionProtocol: Sendable {
     func requestData(
         for request: URLRequest,
         delegate: URLSessionTaskDelegate?
