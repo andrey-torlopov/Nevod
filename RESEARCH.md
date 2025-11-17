@@ -1,0 +1,10 @@
+# Code Review Notes
+
+## Critical issues identified
+
+1. **Encodable routes silently drop bodies when encoding fails.** Both `bodyData` implementations use `try?` and return `nil` when encoding throws, so request creation succeeds with an empty body and no `.bodyEncodingFailed` error. For complex payloads this results in servers receiving empty bodies with no signal to the caller about what broke. Encoding failures should surface as errors so callers can act on them. [Sources/Nevod/Protocols/EncodableRoute.swift]
+2. **Route builder treats zero-length bodies as fatal errors.** `Route.makeRequest` unconditionally returns `.bodyEncodingFailed` whenever the encoded body is `Data()` even though some endpoints legitimately require empty payloads (e.g. `POST /logout` with no body). This makes it impossible to intentionally send an empty body. [Sources/Nevod/Protocols/Route.swift]
+3. **Per-route JSON encoder configuration is ignored.** `EncodableRoute` exposes `bodyEncoder`, but `makeRequest` always passes `config.jsonEncoder`, so providing a route-specific encoder (custom date formatting, key strategy, etc.) has no effect. [Sources/Nevod/Protocols/EncodableRoute.swift, Sources/Nevod/Protocols/Route.swift]
+4. **Rate limiter uses wall-clock time.** `RateLimiter` relies on `Date()` to measure intervals. Any wall-clock adjustments (user changing time, NTP sync, daylight savings) can cause the limiter to stall or allow bursts because elapsed time calculations jump. A monotonic clock (e.g., `ContinuousClock` or `DispatchTime`) should be used for scheduling. [Sources/Nevod/Core/RateLimiter.swift]
+5. **URLSession delegate handling on Linux discards the provided session configuration.** When a delegate is passed, `requestData` instantiates a brand-new `URLSession` with the same configuration but without any of the custom settings applied to the original `URLSession` instance (cache policies, protocol classes, cookie storage). Those overrides are lost for delegated requests, leading to inconsistent behaviour between requests with and without delegates. [Sources/Nevod/Protocols/URLSessionProtocol.swift]
+
