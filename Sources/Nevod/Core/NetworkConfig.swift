@@ -4,6 +4,7 @@ public struct NetworkConfig {
     private let environments: [AnyHashable: any NetworkEnvironmentProviding]
     public let timeout: TimeInterval
     public let retries: Int
+    public let rateLimit: RateLimitConfiguration?
 
     /// Initialize NetworkConfig with environment providers for each domain.
     /// This is the recommended way to configure network settings per domain.
@@ -27,18 +28,21 @@ public struct NetworkConfig {
     public init<Domain: ServiceDomain>(
         environments: [Domain: any NetworkEnvironmentProviding],
         timeout: TimeInterval = 30,
-        retries: Int = 3
+        retries: Int = 3,
+        rateLimit: RateLimitConfiguration? = nil
     ) {
         self.environments = Dictionary(uniqueKeysWithValues: environments.map { (AnyHashable($0.key), $0.value) })
         self.timeout = timeout
         self.retries = retries
+        self.rateLimit = rateLimit
     }
 
     /// Initializer for aggregating multiple domain configurations from different modules
     public init(
         environmentConfigurations: [[AnyHashable: any NetworkEnvironmentProviding]],
         timeout: TimeInterval = 30,
-        retries: Int = 3
+        retries: Int = 3,
+        rateLimit: RateLimitConfiguration? = nil
     ) {
         var mergedEnvironments: [AnyHashable: any NetworkEnvironmentProviding] = [:]
         for config in environmentConfigurations {
@@ -47,6 +51,7 @@ public struct NetworkConfig {
         self.environments = mergedEnvironments
         self.timeout = timeout
         self.retries = retries
+        self.rateLimit = rateLimit
     }
 
     /// Get environment provider for a specific domain

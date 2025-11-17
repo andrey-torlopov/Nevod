@@ -71,7 +71,8 @@ private enum TestDomain: ServiceDomain {
 struct NevodTests {
     private func makeProvider(
         _ handler: @escaping (URLRequest) async throws -> (Data, URLResponse),
-        interceptor: (any RequestInterceptor)? = nil
+        interceptor: (any RequestInterceptor)? = nil,
+        rateLimiter: (any RateLimiting)? = nil
     ) -> NetworkProvider {
         let session = MockSession(handler: handler)
         let networkConfig = NetworkConfig(
@@ -82,7 +83,7 @@ struct NevodTests {
             ],
             timeout: 1
         )
-        return NetworkProvider(config: networkConfig, session: session, interceptor: interceptor)
+        return NetworkProvider(config: networkConfig, session: session, interceptor: interceptor, rateLimiter: rateLimiter)
     }
 
     private struct TestRoute: Route {
@@ -97,6 +98,16 @@ struct NevodTests {
 
     private struct TestModel: Codable, Equatable {
         let id: Int
+    }
+
+    private actor MockRateLimiter: RateLimiting {
+        private(set) var callCount = 0
+
+        func acquirePermit() async {
+            callCount += 1
+        }
+
+        func invocations() async -> Int { callCount }
     }
 
     @Test func successfulRequest() async {
@@ -433,6 +444,74 @@ struct NevodTests {
             #expect(model == expected)
         } catch {
             #expect(Bool(false), "Should not throw")
+        }
+    }
+
+    @Test func rejectsDirectoryTraversalEndpoints() async {
+        struct UnsafeRoute: Route {
+            typealias Response = TestModel
+            typealias Domain = TestDomain
+
+            let domain: TestDomain = .api
+            let endpoint: String = "../secret"
+            let method: HTTPMethod = .get
+            let parameters: [String: String]? = nil
+        }
+
+        let provider = makeProvider({ _ in
+            #expect(Bool(false), "Request should not reach session for invalid endpoints")
+            return (Data(), URLResponse())
+        })
+
+        let result: Result<TestModel, NetworkError> = await provider.request(UnsafeRoute())
+        switch result {
+        case .failure(let error):
+            if case .invalidURL = error {
+                #expect(Bool(true))
+            } else {
+                #expect(Bool(false), "Unexpected error")
+            }
+        default:
+            #expect(Bool(false), "Should fail for invalid endpoint")
+        }
+    }
+
+    @Test func cookieTokenRestoresHttpOnlyFlag() throws {
+        let properties: [HTTPCookiePropertyKey: Any] = [
+            .name: "session",
+            .value: "abc",
+            .domain: "example.com",
+            .path: "/",
+            .secure: true,
+            .httpOnly: true
+        ]
+
+        let cookie = try #require(HTTPCookie(properties: properties))
+        let token = CookieToken(sessionCookies: [cookie])
+        let data = try token.encode()
+        let decoded = try CookieToken.decode(from: data)
+        #expect(decoded.sessionCookies.first?.isHTTPOnly == true)
+        #expect(decoded.sessionCookies.first?.isSecure == true)
+    }
+
+    @Test func rateLimiterIsInvokedPerRequest() async {
+        let limiter = MockRateLimiter()
+        let expected = TestModel(id: 46)
+        let provider = makeProvider({ request in
+            let data = try JSONEncoder().encode(expected)
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (data, response)
+        }, rateLimiter: limiter)
+
+        let result: Result<TestModel, NetworkError> = await provider.request(TestRoute())
+        let invocations = await limiter.invocations()
+        #expect(invocations == 1)
+
+        switch result {
+        case .success(let model):
+            #expect(model == expected)
+        default:
+            #expect(Bool(false))
         }
     }
 }
