@@ -14,15 +14,15 @@ import FoundationNetworking
 /// The interceptor does NOT know HOW to refresh tokens - that logic is injected
 public actor AuthenticationInterceptor<Token: TokenModel>: RequestInterceptor {
     private let tokenStorage: TokenStorage<Token>
-    
+
     /// Strategy for refreshing tokens when they expire
     /// Receives the current (possibly expired) token and returns a new one
     private let refreshStrategy: @Sendable (Token?) async throws -> Token
-    
+
     /// Filter to determine which requests should be authenticated
     /// Useful when you have multiple domains with different auth schemes
     private let shouldAuthenticate: @Sendable (URLRequest) -> Bool
-    
+
     private var refreshTask: Task<Token, Error>?
 
     /// Creates an authentication interceptor
@@ -45,14 +45,14 @@ public actor AuthenticationInterceptor<Token: TokenModel>: RequestInterceptor {
         guard shouldAuthenticate(request) else {
             return request
         }
-        
+
         var req = request
-        
+
         // Apply token if available
         if let token = await tokenStorage.load() {
             token.authorize(&req)
         }
-        
+
         return req
     }
 
@@ -73,7 +73,7 @@ public actor AuthenticationInterceptor<Token: TokenModel>: RequestInterceptor {
             _ = try await refreshTokenIfNeeded()
             return true
         } catch {
-            throw NetworkError.unauthorized
+            throw NetworkError.unauthorized(data: nil, response: response)
         }
     }
 
@@ -88,13 +88,13 @@ public actor AuthenticationInterceptor<Token: TokenModel>: RequestInterceptor {
         let task = Task { () async throws -> Token in
             // Get current token (may be nil or expired)
             let currentToken = await tokenStorage.load()
-            
+
             // Call refresh strategy (it knows what to do)
             let newToken = try await refreshStrategy(currentToken)
-            
+
             // Save new token
             await tokenStorage.save(newToken)
-            
+
             return newToken
         }
 

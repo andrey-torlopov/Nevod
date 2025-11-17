@@ -56,14 +56,15 @@ public extension Route {
     }
 
     /// Request body data (for JSON encoding)
+    /// Note: This will be overridden by EncodableRoute for custom body encoding
     var bodyData: Data? {
         guard let params = parameters, !params.isEmpty else { return nil }
-        
+
         switch parameterEncoding {
         case .json:
             // JSONSerialization works well for [String: String]
             return try? JSONSerialization.data(withJSONObject: params, options: [])
-        
+
         case .formUrlEncoded:
             // Create form-urlencoded string: key1=value1&key2=value2
             let formString = params.map { key, value in
@@ -72,7 +73,7 @@ public extension Route {
                 return "\(encodedKey)=\(encodedValue)"
             }.joined(separator: "&")
             return formString.data(using: .utf8)
-        
+
         case .query, .none:
             return nil
         }
@@ -92,8 +93,9 @@ public extension Route {
                 request.httpMethod = method.stringValue
                 request.timeoutInterval = config.timeout
 
-                // Set body if needed
-                if let body = bodyData {
+                // Set body if needed (allow route to use config encoder)
+                let body = self.bodyData(using: config.jsonEncoder)
+                if let body = body {
                     request.httpBody = body
                     if body.isEmpty { return .failure(.bodyEncodingFailed) }
                 }
@@ -110,6 +112,12 @@ public extension Route {
 
                 return .success(request)
             }
+    }
+
+    /// Get body data using a specific encoder (for routes that need encoding)
+    /// Default implementation uses bodyData property for backward compatibility
+    func bodyData(using encoder: JSONEncoder) -> Data? {
+        bodyData
     }
     // MARK: - Helpers
 

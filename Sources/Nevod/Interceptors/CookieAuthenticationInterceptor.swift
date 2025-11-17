@@ -96,7 +96,7 @@ public actor CookieAuthenticationInterceptor: RequestInterceptor {
             _ = try await loginIfNeeded()
             return true
         } catch {
-            throw NetworkError.unauthorized
+            throw NetworkError.unauthorized(data: nil, response: response)
         }
     }
 

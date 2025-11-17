@@ -49,7 +49,18 @@ public actor NetworkProvider {
         _ route: R,
         delegate: URLSessionTaskDelegate? = nil
     ) async -> Result<R.Response, NetworkError> {
-        let attempts = max(1, config.retries)
+        // Use RetryPolicy if available, otherwise fall back to config.retries
+        let attempts: Int
+        let policy: RetryPolicy?
+
+        if let retryPolicy = config.retryPolicy {
+            attempts = retryPolicy.maxAttempts
+            policy = retryPolicy
+        } else {
+            attempts = max(1, config.retries)
+            policy = nil
+        }
+
         let currentSession = session
 
         logger?.debug("Starting request to \(route.endpoint)", payload: [
@@ -117,7 +128,7 @@ public actor NetworkProvider {
 
                     // Check for HTTP errors
                     if let httpResponse = httpResponse {
-                        if let networkError = mapHTTPError(statusCode: httpResponse.statusCode) {
+                        if let networkError = mapHTTPError(statusCode: httpResponse.statusCode, data: data, response: httpResponse) {
                             // Ask interceptor if we should retry
                             if try await shouldRetry(
                                 request: adaptedRequest,
@@ -130,6 +141,17 @@ public actor NetworkProvider {
                                     "error": String(describing: networkError),
                                     "attempt": String(attempt + 1)
                                 ])
+
+                                // Apply exponential backoff if retry policy is configured
+                                if let policy = policy, attempt < attempts - 1 {
+                                    let delay = policy.delay(for: attempt)
+                                    logger?.debug("Waiting \(delay)s before retry", payload: [
+                                        "delay": String(format: "%.2f", delay),
+                                        "attempt": String(attempt + 1)
+                                    ])
+                                    try? await policy.performDelay(for: attempt)
+                                }
+
                                 continue // Retry
                             }
 
@@ -144,7 +166,7 @@ public actor NetworkProvider {
 
                     // Decode response
                     do {
-                        let decoded = try route.decode(data, using: JSONDecoder())
+                        let decoded = try route.decode(data, using: config.jsonDecoder)
                         logger?.debug("Request completed successfully", payload: [
                             "endpoint": route.endpoint,
                             "attempt": String(attempt + 1),
@@ -156,7 +178,7 @@ public actor NetworkProvider {
                             "endpoint": route.endpoint,
                             "error": error.localizedDescription
                         ])
-                        return .failure(.parsingError)
+                        return .failure(.parsingError(data: data, error: error))
                     }
 
                 } catch {
@@ -170,6 +192,17 @@ public actor NetworkProvider {
                             "error": String(describing: networkError),
                             "attempt": String(attempt + 1)
                         ])
+
+                        // Apply exponential backoff if retry policy is configured
+                        if let policy = policy, attempt < attempts - 1 {
+                            let delay = policy.delay(for: attempt)
+                            logger?.debug("Waiting \(delay)s before retry", payload: [
+                                "delay": String(format: "%.2f", delay),
+                                "attempt": String(attempt + 1)
+                            ])
+                            try? await policy.performDelay(for: attempt)
+                        }
+
                         continue
                     }
 
@@ -242,16 +275,16 @@ public actor NetworkProvider {
         return try await interceptor.retry(request, response: response, error: error)
     }
 
-    private func mapHTTPError(statusCode: Int) -> NetworkError? {
+    private func mapHTTPError(statusCode: Int, data: Data?, response: HTTPURLResponse?) -> NetworkError? {
         switch statusCode {
         case 200..<300:
             return nil
         case 401:
-            return .unauthorized
+            return .unauthorized(data: data, response: response)
         case 400..<500:
-            return .clientError(statusCode)
+            return .clientError(code: statusCode, data: data, response: response)
         case 500..<600:
-            return .serverError(statusCode)
+            return .serverError(code: statusCode, data: data, response: response)
         default:
             return .unknown(NSError(domain: "HTTP", code: statusCode))
         }

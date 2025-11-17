@@ -5,6 +5,9 @@ public struct NetworkConfig {
     public let timeout: TimeInterval
     public let retries: Int
     public let rateLimit: RateLimitConfiguration?
+    public let jsonEncoder: JSONEncoder
+    public let jsonDecoder: JSONDecoder
+    public let retryPolicy: RetryPolicy?
 
     /// Initialize NetworkConfig with environment providers for each domain.
     /// This is the recommended way to configure network settings per domain.
@@ -29,12 +32,18 @@ public struct NetworkConfig {
         environments: [Domain: any NetworkEnvironmentProviding],
         timeout: TimeInterval = 30,
         retries: Int = 3,
-        rateLimit: RateLimitConfiguration? = nil
+        rateLimit: RateLimitConfiguration? = nil,
+        jsonEncoder: JSONEncoder = JSONEncoder(),
+        jsonDecoder: JSONDecoder = JSONDecoder(),
+        retryPolicy: RetryPolicy? = nil
     ) {
         self.environments = Dictionary(uniqueKeysWithValues: environments.map { (AnyHashable($0.key), $0.value) })
         self.timeout = timeout
         self.retries = retries
         self.rateLimit = rateLimit
+        self.jsonEncoder = jsonEncoder
+        self.jsonDecoder = jsonDecoder
+        self.retryPolicy = retryPolicy
     }
 
     /// Initializer for aggregating multiple domain configurations from different modules
@@ -42,7 +51,10 @@ public struct NetworkConfig {
         environmentConfigurations: [[AnyHashable: any NetworkEnvironmentProviding]],
         timeout: TimeInterval = 30,
         retries: Int = 3,
-        rateLimit: RateLimitConfiguration? = nil
+        rateLimit: RateLimitConfiguration? = nil,
+        jsonEncoder: JSONEncoder = JSONEncoder(),
+        jsonDecoder: JSONDecoder = JSONDecoder(),
+        retryPolicy: RetryPolicy? = nil
     ) {
         var mergedEnvironments: [AnyHashable: any NetworkEnvironmentProviding] = [:]
         for config in environmentConfigurations {
@@ -52,6 +64,9 @@ public struct NetworkConfig {
         self.timeout = timeout
         self.retries = retries
         self.rateLimit = rateLimit
+        self.jsonEncoder = jsonEncoder
+        self.jsonDecoder = jsonDecoder
+        self.retryPolicy = retryPolicy
     }
 
     /// Get environment provider for a specific domain
