@@ -8,10 +8,11 @@ import Letopis
 /// - Simple usage: Create with just config for basic requests
 /// - Advanced usage: Add interceptor for auth, logging, custom headers, etc.
 public actor NetworkProvider {
-    nonisolated(unsafe) private let session: URLSessionProtocol
+    private let session: URLSessionProtocol
     private let config: NetworkConfig
     private let interceptor: (any RequestInterceptor)?
     private let logger: Letopis?
+    private let rateLimiter: (any RateLimiting)?
 
     /// Creates a network provider
     /// - Parameters:
@@ -23,12 +24,20 @@ public actor NetworkProvider {
         config: NetworkConfig,
         session: URLSessionProtocol = URLSessionType.shared,
         interceptor: (any RequestInterceptor)? = nil,
+        rateLimiter: (any RateLimiting)? = nil,
         logger: Letopis? = Letopis(interceptors: [ConsoleInterceptor()])
     ) {
         self.config = config
         self.session = session
         self.interceptor = interceptor
         self.logger = logger
+        if let rateLimiter = rateLimiter {
+            self.rateLimiter = rateLimiter
+        } else if let rateLimit = config.rateLimit {
+            self.rateLimiter = RateLimiter(configuration: rateLimit)
+        } else {
+            self.rateLimiter = nil
+        }
     }
 
     /// Executes a network request
@@ -49,6 +58,10 @@ public actor NetworkProvider {
         ])
 
         for attempt in 0..<attempts {
+            if let rateLimiter {
+                await rateLimiter.acquirePermit()
+            }
+
             logger?.debug("Request attempt \(attempt + 1) of \(attempts)", payload: [
                 "attempt": String(attempt + 1),
                 "endpoint": route.endpoint

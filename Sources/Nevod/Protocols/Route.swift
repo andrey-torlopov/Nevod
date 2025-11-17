@@ -118,7 +118,14 @@ public extension Route {
         var comps = URLComponents(url: base, resolvingAgainstBaseURL: false)
 
         let basePath = (comps?.path ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let endpointPath = endpoint.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let endpointPath: String
+        switch sanitizeEndpoint(endpoint) {
+        case .success(let sanitized):
+            endpointPath = sanitized
+        case .failure(let error):
+            return .failure(error)
+        }
+
         let joinedPath = [basePath, endpointPath].filter { !$0.isEmpty }.joined(separator: "/")
         comps?.path = "/" + joinedPath
 
@@ -127,6 +134,24 @@ public extension Route {
 
         guard let url = comps?.url else { return .failure(.invalidURL) }
         return .success(url)
+    }
+
+    private func sanitizeEndpoint(_ endpoint: String) -> Result<String, NetworkError> {
+        let trimmed = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.contains("://") || trimmed.hasPrefix("//") {
+            return .failure(.invalidURL)
+        }
+
+        let normalized = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if normalized.range(of: #"(^|/)(\.{1,2})(/|$)"#, options: .regularExpression) != nil {
+            return .failure(.invalidURL)
+        }
+
+        if normalized.contains("\\") {
+            return .failure(.invalidURL)
+        }
+
+        return .success(normalized)
     }
 
     /// Merge without duplicates by parameter name: new items override old ones.
