@@ -374,7 +374,7 @@ struct NevodTests {
         let route = SimplePostRoute<TestModel, TestDomain>(
             endpoint: "/create",
             domain: .api,
-            parameters: ["name": "John", "email": "john@test.com"]
+            bodyParameters: ["name": "John", "email": "john@test.com"]
         )
         let result: Result<TestModel, NetworkError> = await provider.request(route)
 
@@ -421,13 +421,13 @@ struct NevodTests {
             _ = try await provider.perform(TestRoute())
             #expect(Bool(false), "Should throw")
         } catch let error as NetworkError {
-            if case .clientError(let code) = error {
+            if case .clientError(let code, _, _) = error {
                 #expect(code == 404)
             } else {
-                #expect(Bool(false), "Wrong error type")
+                #expect(Bool(false), "Wrong error type: \(error)")
             }
         } catch {
-            #expect(Bool(false), "Wrong error type")
+            #expect(Bool(false), "Wrong error type: \(error)")
         }
     }
 
