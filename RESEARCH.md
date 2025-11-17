@@ -1,10 +1,23 @@
-# Code Review Notes
+## Перевод анализа
 
-## Critical issues identified
+### Критические проблемы
 
-1. **Encodable routes silently drop bodies when encoding fails.** Both `bodyData` implementations use `try?` and return `nil` when encoding throws, so request creation succeeds with an empty body and no `.bodyEncodingFailed` error. For complex payloads this results in servers receiving empty bodies with no signal to the caller about what broke. Encoding failures should surface as errors so callers can act on them. [Sources/Nevod/Protocols/EncodableRoute.swift]
-2. **Route builder treats zero-length bodies as fatal errors.** `Route.makeRequest` unconditionally returns `.bodyEncodingFailed` whenever the encoded body is `Data()` even though some endpoints legitimately require empty payloads (e.g. `POST /logout` with no body). This makes it impossible to intentionally send an empty body. [Sources/Nevod/Protocols/Route.swift]
-3. **Per-route JSON encoder configuration is ignored.** `EncodableRoute` exposes `bodyEncoder`, but `makeRequest` always passes `config.jsonEncoder`, so providing a route-specific encoder (custom date formatting, key strategy, etc.) has no effect. [Sources/Nevod/Protocols/EncodableRoute.swift, Sources/Nevod/Protocols/Route.swift]
-4. **Rate limiter uses wall-clock time.** `RateLimiter` relies on `Date()` to measure intervals. Any wall-clock adjustments (user changing time, NTP sync, daylight savings) can cause the limiter to stall or allow bursts because elapsed time calculations jump. A monotonic clock (e.g., `ContinuousClock` or `DispatchTime`) should be used for scheduling. [Sources/Nevod/Core/RateLimiter.swift]
-5. **URLSession delegate handling on Linux discards the provided session configuration.** When a delegate is passed, `requestData` instantiates a brand-new `URLSession` with the same configuration but without any of the custom settings applied to the original `URLSession` instance (cache policies, protocol classes, cookie storage). Those overrides are lost for delegated requests, leading to inconsistent behaviour between requests with and without delegates. [Sources/Nevod/Protocols/URLSessionProtocol.swift]
+1. **Маршруты с Encodable-тилами тихо “проглатывают” ошибки кодирования тела запроса.**
+   В обоих `bodyData` используется `try?`, поэтому при ошибке кодирования возвращается `nil`, и создание запроса продолжается так, будто всё отлично. В итоге сервер получает пустое тело, а вызывающая сторона не получает сигнал о проблеме — ошибка `.bodyEncodingFailed` не возникает. Для сложных payload-ов это приводит к «потерянным» данным и трудным для отладки багам. Ошибки кодирования должны пробрасываться наружу.
+   Источник: `Sources/Nevod/Protocols/EncodableRoute.swift`.
 
+2. **Route-builder считает пустое тело запроса фатальной ошибкой.**
+   В `Route.makeRequest` любое тело `Data()` трактуется как `.bodyEncodingFailed`. Но есть множество эндпоинтов, где пустое тело — это норма (например: `POST /logout`). Сейчас невозможно намеренно отправить пустое тело.
+   Источник: `Sources/Nevod/Protocols/Route.swift`.
+
+3. **Конфигурация JSON-кодировщика на уровне маршрута игнорируется.**
+   `EncodableRoute` предоставляет `bodyEncoder`, но внутри `makeRequest` всегда используется `config.jsonEncoder`. В итоге любой кастомный энкодер маршрута (формат дат, стратегия ключей и т. п.) вообще не задействуется.
+   Источники: `EncodableRoute.swift`, `Route.swift`.
+
+4. **RateLimiter использует системное («настенное») время.**
+   В `RateLimiter` применяется `Date()` для измерения интервалов. Любые изменения времени на устройстве — перевод часов пользователем, синхронизация NTP, переход на летнее — приводят к скачкам интервалов, из-за чего лимитер может либо «замёрзнуть», либо внезапно пропустить лишние запросы. Решение: использовать монотонные часы (`ContinuousClock`, `DispatchTime`).
+   Источник: `Sources/Nevod/Core/RateLimiter.swift`.
+
+5. **На Linux `URLSession` с delegate теряет пользовательскую конфигурацию.**
+   При передаче delegate метод `requestData` создаёт новый экземпляр `URLSession` с той же конфигурацией, но *без всех пользовательских настроек* исходной сессии (кеш, protocol classes, cookie storage и т. д.). Эти настройки отбрасываются, и поведение запросов с delegate и без него становится различным.
+   Источник: `Sources/Nevod/Protocols/URLSessionProtocol.swift`.
