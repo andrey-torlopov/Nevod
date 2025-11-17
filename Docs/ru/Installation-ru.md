@@ -57,20 +57,6 @@ let package = Package(
 swift package update
 ```
 
-## Зависимости
-
-Nevod автоматически устанавливает свои зависимости через SPM:
-
-### Letopis (Структурированное логирование)
-
-**Репозиторий**: [https://github.com/andrey-torlopov/Letopis](https://github.com/andrey-torlopov/Letopis)
-
-**Версия**: 0.0.10 или новее
-
-**Назначение**: Логирование внутренних событий NetworkProvider
-
-Используйте `import Letopis`, только если хотите передать собственный логгер в `NetworkProvider`.
-
 ## Минимальная настройка
 
 ```swift

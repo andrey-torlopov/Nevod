@@ -120,10 +120,6 @@ let provider = NetworkProvider(config: config, interceptor: authInterceptor)
 - Swift 6.2+
 - Xcode 16.0+
 
-## Зависимости
-
-- [Letopis](https://github.com/andrey-torlopov/Letopis) - Структурированное логирование
-
 ## Лицензия
 
 MIT License - см. файл [LICENSE](./LICENSE) для деталей

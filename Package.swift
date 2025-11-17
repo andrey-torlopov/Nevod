@@ -15,17 +15,13 @@ let package = Package(
             name: "Nevod",
             targets: ["Nevod"]),
     ],
-    dependencies: [
-        .package(url: "https://github.com/andrey-torlopov/Letopis.git", from: "0.0.13")
-    ],
+    dependencies: [],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
             name: "Nevod",
-            dependencies: [
-                .product(name: "Letopis", package: "Letopis"),
-            ]),
+            dependencies: []),
         .testTarget(
             name: "NevodTests",
             dependencies: [

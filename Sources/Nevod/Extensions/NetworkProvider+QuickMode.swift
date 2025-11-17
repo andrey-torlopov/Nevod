@@ -2,7 +2,6 @@ import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import Letopis
 
 // MARK: - Default Domain for Quick Mode
 
@@ -41,7 +40,7 @@ public extension NetworkProvider {
         session: URLSessionProtocol = URLSessionType.shared,
         interceptor: (any RequestInterceptor)? = nil,
         rateLimiter: (any RateLimiting)? = nil,
-        logger: Letopis? = Letopis(interceptors: [ConsoleInterceptor()])
+        logger: NevodLogger? = NevodLogger()
     ) -> NetworkProvider {
         let config = NetworkConfig(
             environments: [DefaultDomain.default: SimpleEnvironment(baseURL: baseURL)],

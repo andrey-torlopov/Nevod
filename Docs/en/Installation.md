@@ -57,20 +57,6 @@ Then run:
 swift package update
 ```
 
-## Dependencies
-
-Nevod automatically installs its dependencies via SPM:
-
-### Letopis (Structured Logging)
-
-**Repository**: [https://github.com/andrey-torlopov/Letopis](https://github.com/andrey-torlopov/Letopis)
-
-**Version**: 0.0.10 or later
-
-**Purpose**: Internal event logging for NetworkProvider
-
-You only need to `import Letopis` if you want to pass a custom logger to `NetworkProvider`.
-
 ## Minimal Setup
 
 ```swift
