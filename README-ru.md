@@ -127,3 +127,7 @@ MIT License - см. файл [LICENSE](./LICENSE) для деталей
 ## Вклад в проект
 
 Вклад приветствуется! Пожалуйста, не стесняйтесь отправлять Pull Request.
+
+## ☕ Buy me a coffee
+
+Если проект вам полезен, вы можете [поддержать мою работу на Boosty](https://boosty.to/andreytorlopov).

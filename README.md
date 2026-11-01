@@ -127,3 +127,7 @@ MIT License - see [LICENSE](./LICENSE) file for details
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+## ☕ Buy me a coffee
+
+If you find this project useful, you can [support my work on Boosty](https://boosty.to/andreytorlopov).
